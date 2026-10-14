@@ -75,7 +75,8 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
   <div class="score"><label>ENTRY QUALITY</label><strong id="entryScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="entryBar"></i></div></div>
 </section>
 <div id="phase">Завантаження підтверджених свічок…</div>
-<div class="small" id="confidence">CONFIDENCE: —</div>
+<div class="small" id="confidence">CONFIDENCE (data quality, not win probability): —</div>
+<div class="panel"><b>SQUEEZE EVIDENCE</b><div id="squeezeEvidence" class="small">Дані завантажуються…</div></div>
 <div class="panel"><b>MTF CONSENSUS</b><div id="mtf"><span class="small">Дані завантажуються</span></div></div>
 <section id="metrics">
   <div class="metric"><div class="label">FUNDING · поточний / trend / percentile</div><div class="value" id="funding">—</div></div>
@@ -96,7 +97,7 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
 <div class="panel"><b id="levelsTitle">SHORT ENTRY ZONE · ATR / swing</b><div id="levels"><div class="small">Очікування даних…</div></div></div>
 <div class="panel"><b>WHY?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul><b>AGAINST SHORT</b><ul id="against"><li>Дані перевіряються…</li></ul><b>DECISION</b><div id="decision">WAIT</div></div>
 <div id="error" role="alert"></div>
-<div id="hint">Джерело ринкових даних: Gate.io public Futures API. Розрахунки використовують лише закриті свічки; оновлення щохвилини. Публічний потік ліквідацій не дає надійно визначити напрямок позиції — він не позначається як long liquidation. OI/Long-Short доступні лише якщо їх повертає Gate.io. Ончейн-потік, команда, unlocks, BTC dominance, кореляція та backend-проксі не підключені. Немає даних — немає підтвердження. Це аналітика, не фінансова порада; оцініть ризик самостійно.</div>
+<div id="hint">Gate.io Futures public REST/WebSocket · усі індикатори свічок розраховані тільки на закритих свічках і оновлюються щохвилини. Squeeze/Bearish/Entry engine незалежний від мережевих запитів; переходи сигналу зберігаються локально для майбутнього аналізу, але це не backtest. Confidence — евристика доступності даних, а не ймовірність прибутку; модель не навчена й не backtested. Ліквідації відображають кількість і raw contract size; напрямок UNKNOWN, не називається long liquidation. Необов'язкові OI, funding history та Long/Short можуть бути недоступні на Gate.io — відсутнє не домислюється. Whale, Team/Project wallet, Token Unlock дані та їх провайдери ще не підключені. Scanner, Telegram, backend та backtesting — майбутня робота. Аналітичний інструмент, не торгова рекомендація.</div>
 <script>
 'use strict';
 const API='https://api.gateio.ws/api/v4';
@@ -108,10 +109,10 @@ const fmt=v=>Number.isFinite(v)?(v>=1000?v.toLocaleString('en-US',{maximumFracti
 const pct=v=>Number.isFinite(v)?`${v>=0?'+':''}${(v*100).toFixed(2)}%`:'н/д';
 const cleanPair=s=>String(s||'').trim().toUpperCase().replace('/','_');
 function readList(){
- try{const saved=JSON.parse(localStorage.getItem('lw_pairs')||'null');if(Array.isArray(saved)){const valid=saved.map(x=>typeof x==='string'?{name:x,fav:false,enabled:true}:{...x,enabled:x.enabled!==false,fav:!!x.fav}).filter(x=>x&&/^[A-Z0-9]+_USDT$/.test(x.name)).slice(0,50);if(valid.length)return valid}}catch(_){}
+ try{const saved=JSON.parse(localStorage.getItem('lw_pairs')||'null');if(Array.isArray(saved)){const valid=saved.map(x=>typeof x==='string'?{name:x,fav:false,enabled:true}:{...x,enabled:x.enabled!==false,fav:!!x.fav}).filter(x=>x&&/^[A-Z0-9]+_USDT$/.test(x.name)).slice(0,50);if(valid.length){if(!valid.some(p=>p.enabled))valid[0].enabled=true;return valid}}}catch(_){}
  return DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));
 }
-let pairs=readList(), active=localStorage.getItem('lw_gate_pair')||pairs[0].name, liquidations={}, socket=null, busy=false, reloadPending=false, liqLive=false, knownPairs=new Set(DEFAULT_PAIRS);
+let pairs=readList(), active=localStorage.getItem('lw_gate_pair')||pairs[0].name, liquidations={}, socket=null, wsPingTimer=null, busy=false, reloadPending=false, liqLive=false, knownPairs=new Set(DEFAULT_PAIRS);
 if(!pairs.some(p=>p.name===active&&p.enabled))active=(pairs.find(p=>p.enabled)||pairs[0]).name;
 function savePairs(){localStorage.setItem('lw_pairs',JSON.stringify(pairs));localStorage.setItem('lw_gate_pair',active)}
 function renderPairs(){
@@ -121,6 +122,7 @@ function renderPairs(){
  const list=$('pairList');list.replaceChildren();
  pairs.forEach(p=>{const b=document.createElement('button');b.className='chip'+(p.name===active?' active':'');b.textContent=(p.enabled?'':'⏸ ')+(p.fav?'★ ':'')+p.name.replace('_USDT','');b.title=p.enabled?'Натисніть, щоб відкрити':'Натисніть, щоб увімкнути';b.onclick=()=>{if(!p.enabled){p.enabled=true;active=p.name;savePairs();renderPairs();load()}else choose(p.name)};list.append(b)});
  $('remove').disabled=pairs.length<=1;$('togglePair').textContent=pairs.find(p=>p.name===active)?.enabled?'⏸':'▶';
+ $('togglePair').title=pairs.find(p=>p.name===active)?.enabled?'Disable pair':'Enable pair';$('resetPairs').title='Reset pairs to defaults';
  $('togglePair').disabled=pairs.filter(p=>p.enabled).length<=1&&pairs.find(p=>p.name===active)?.enabled;
  $('favorite').textContent=pairs.find(p=>p.name===active)?.fav?'★':'☆';
 }
@@ -152,13 +154,13 @@ function summarize(raw,tf){
  const oldPriceHigh=Math.max(...bars.slice(-20,-10).map(c=>c.high)),newPriceHigh=Math.max(...recent.map(c=>c.high));
  const oldObvHigh=Math.max(...obv.slice(-20,-10)),newObvHigh=Math.max(...obv.slice(-10));
  const obvDivergence=newPriceHigh>oldPriceHigh&&newObvHigh<oldObvHigh;
- const macdBear=line[n-1]<sig[n-1]&&hist[n-1]<hist[n-2],histogramTurn=hist[n-1]<0&&hist[n-2]>=0,histogramAcceleration=hist[n-1]<hist[n-2];
+ const macdBear=line[n-1]<sig[n-1]&&hist[n-1]<hist[n-2],histogramTurn=hist[n-1]<0&&hist[n-2]>=0,histogramAcceleration=hist[n-1]<hist[n-2],negativeHistogramAcceleration=hist[n-1]<0&&histogramAcceleration;
  const support=Math.min(...bars.slice(-21,-1).map(c=>c.low)), broke=bars[n-1].close<support;
- const oldHigh=Math.max(...bars.slice(-31,-11).map(c=>c.high)),recentHigh=Math.max(...bars.slice(-10).map(c=>c.high));
- const rejection=recentHigh>=oldHigh&&bars[n-1].close<recentHigh-atr*.5,lowerHigh=recentHigh<oldHigh,higherHigh=recentHigh>oldHigh,lowerLow=bars[n-1].low<Math.min(...bars.slice(-11,-1).map(c=>c.low));
+ const referenceBars=bars.slice(-31,-11),recentBars=bars.slice(-10),oldHigh=Math.max(...referenceBars.map(c=>c.high)),recentHigh=Math.max(...recentBars.map(c=>c.high));
+ const priorRejection=referenceBars.some(c=>c.high>=oldHigh-atr*.25&&c.close<c.high-atr*.5),rejection=priorRejection||recentHigh>=oldHigh&&bars[n-1].close<recentHigh-atr*.5,lowerHigh=recentHigh<oldHigh,higherHigh=recentHigh>oldHigh,lowerLow=bars[n-1].low<Math.min(...bars.slice(-11,-1).map(c=>c.low));
  const bearishCrossover=line[n-1]<sig[n-1]&&line[n-2]>=sig[n-2];
- const change=closes[n-1]/closes[n-2]-1,change1h=closes[n-1]/closes[Math.max(0,n-Math.round(3600/secs))]-1,rv=avgVol?bars[n-1].v/avgVol:NaN;
- return {tf,bars,price:closes[n-1],change,change1h,hi,lo,atr,rv,obvBear,obvSlope,obvDivergence,macd:line[n-1],signal:sig[n-1],hist:hist[n-1],histogramTurn,histogramAcceleration,macdBear,bearishCrossover,broke,rejection,lowerHigh,higherHigh,lowerLow,high:Math.max(...swing.map(c=>c.high)),support,priorLow:Math.min(...bars.slice(-60,-20).map(c=>c.low))};
+ const change=closes[n-1]/closes[n-2]-1,change1h=closes[n-1]/closes[Math.max(0,n-1-Math.round(3600/secs))]-1,rv=avgVol?bars[n-1].v/avgVol:NaN;
+ return {tf,bars,price:closes[n-1],change,change1h,hi,lo,atr,rv,obvBear,obvSlope,obvDivergence,macd:line[n-1],signal:sig[n-1],hist:hist[n-1],histogramTurn,histogramAcceleration,negativeHistogramAcceleration,macdBear,bearishCrossover,broke,rejection,lowerHigh,higherHigh,lowerLow,high:Math.max(...swing.map(c=>c.high)),support,priorLow:Math.min(...bars.slice(-60,-20).map(c=>c.low))};
 }
 function liqStats(pair){
  const now=Date.now(),all=liquidations[pair]||[],recent=all.filter(e=>e.t>now-900000),previous=all.filter(e=>e.t<=now-900000&&e.t>now-1800000);
@@ -174,8 +176,16 @@ function changeOver(rows,key,seconds){
  const prior=[...rows].reverse().find(r=>Number(r.time)<=target),oldValue=statsValue(prior,key);
  return lastValue!==null&&oldValue!==null&&oldValue>0?lastValue/oldValue-1:null;
 }
-function previousSignal(pair){
- try{const history=JSON.parse(localStorage.getItem('lw_signal_history_v2')||'[]');return history.filter(x=>x.pair===pair).at(-1)?.signal||''}catch(_){return ''}
+function lifecycleState(pair){
+ try{return JSON.parse(localStorage.getItem('lw_lifecycle_v2')||'{}')[pair]||{active:false,invalidated:false}}catch(_){return {active:false,invalidated:false}}
+}
+function saveLifecycle(pair,result){
+ try{
+  const all=JSON.parse(localStorage.getItem('lw_lifecycle_v2')||'{}'),state=all[pair]||{active:false,invalidated:false};
+  if(result.invalidated){state.active=false;state.invalidated=true}
+  else if(result.setup){state.active=true;state.invalidated=false}
+  all[pair]=state;localStorage.setItem('lw_lifecycle_v2',JSON.stringify(all));
+ }catch(_){}
 }
 function recordSignal(pair,result,levels){
  try{
@@ -194,11 +204,12 @@ function weightedScore(parts){
 }
 function evaluateSignal(input){
  const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated,coverage}=input;
+ const oiScore=(value,threshold)=>value===null?NaN:value<0?priceChange<0?(value<=threshold?100:75):25:value>0?priceChange>0?(ratio!==null&&ratio>=1.3?75:55):priceChange<0?15:35:35;
  const squeeze=weightedScore([
   {weight:20,value:ratio===null?NaN:ratio>=2?100:ratio>=1.5?75:ratio>=1.2?45:15},
   {weight:15,value:Number.isFinite(funding)?funding>=.0008?100:funding>=.0005?80:funding>0?55:10:NaN},
-  {weight:12,value:oi1h===null?NaN:oi1h<=-.03?100:oi1h<-.01?75:oi1h<0?55:oi1h>.01?0:25},
-  {weight:8,value:oi4h===null?NaN:oi4h<=-.05?100:oi4h<-.02?75:oi4h<0?55:oi4h>.02?0:25},
+  {weight:12,value:oiScore(oi1h,-.03)},
+  {weight:8,value:oiScore(oi4h,-.05)},
   {weight:10,value:Number.isFinite(priceChange)?priceChange<-.025?100:priceChange<0?65:10:NaN},
   {weight:15,value:liqs.available?liqs.spike?100:liqs.count?45:0:NaN},
   {weight:20,value:Number.isFinite(volumeRatio)?volumeRatio>=3?100:volumeRatio>=2?80:volumeRatio>=1.3?60:volumeRatio>=1?35:10:NaN}
@@ -222,10 +233,11 @@ function evaluateSignal(input){
  const shortScore=Math.round((squeeze.score+bearish.score)/2);
  const dataCoverage=Number.isFinite(coverage)?coverage:Math.round((squeeze.coverage+bearish.coverage+entry.coverage)/3);
  const setup=shortScore>=60&&squeeze.score>=55&&bearish.score>=50;
+ const probableSqueeze=priceChange<0&&oi1h!==null&&oi1h<0&&funding!==null&&funding>0&&ratio!==null&&ratio>=1.3&&liqs.spike&&volumeRatio>=1.3;
  const invalidated=!!previouslyInvalidated&&!setup||!!hadSetup&&price>bars4.high+bars4.atr*.25&&oi1h!==null&&oi1h>0&&!bars4.macdBear;
- const entryReady=setup&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60;
- const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
- return {squeeze,bearish,entry,shortScore,coverage:dataCoverage,setup,entryReady,invalidated,decision,midpoint};
+ const entryReady=setup&&probableSqueeze&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60;
+ const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup&&(late||rr<1.5||entry.score<70||probableSqueeze&&bearish.score>=70)?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
+ return {squeeze,bearish,entry,shortScore,coverage:dataCoverage,setup,probableSqueeze,entryReady,invalidated,decision,midpoint};
 }
 function renderList(id,items,empty){
  const ul=$(id);ul.replaceChildren();
@@ -245,11 +257,24 @@ function paintTF(tfs){
  const root=$('mtf');root.replaceChildren();
  tfs.forEach(t=>{const b=document.createElement('span');b.className='tf '+(t.change<0?'down':'up');b.textContent=`${t.tf} ${t.change<0?'▼':'▲'}`;root.append(b)});
 }
+function clearDashboard(){
+ ['price','change','squeezeScore','bearScore','setupScore','entryScore'].forEach(id=>$(id).textContent='—');
+ ['squeezeBar','bearBar','setupBar','entryBar'].forEach(id=>$(id).style.width='0%');
+ $('phase').textContent='DATA UNAVAILABLE · signal evaluation paused';$('confidence').textContent='CONFIDENCE: unavailable';
+ $('squeezeEvidence').textContent='Squeeze evidence unavailable; no signal is generated.';
+ $('decision').textContent='WAIT · DATA UNAVAILABLE';
+ ['funding','oi','ratio','liquidations','volume','obv','macd','structure','btc','quality'].forEach(id=>setMetric(id,'UNAVAILABLE'));
+ $('mtf').textContent='UNAVAILABLE';
+ $('coverageList').textContent='⚠ Required market data unavailable';
+ $('levels').textContent='Entry levels unavailable';$('levelsTitle').textContent='SHORT ENTRY ZONE · unavailable';
+ renderList('reasons',[],'No current market data.');
+ renderList('against',['Market data unavailable; previous values cleared.'],'');
+}
 async function load(){
  if(busy){reloadPending=true;return}busy=true;const pair=active;$('error').style.display='none';$('updated').textContent='Оновлення…';
  try{
   const intervals=Object.keys(PERIODS);
-  const [candles,tickRaw,contractRaw,statsRaw,fundingRaw,btcRaw]=await Promise.all([
+  const responses=await Promise.all([
    ...intervals.map(tf=>request(`/futures/usdt/candlesticks?contract=${encodeURIComponent(pair)}&interval=${tf}&limit=120`)),
    request(`/futures/usdt/tickers?contract=${encodeURIComponent(pair)}`).catch(()=>null),
    request(`/futures/usdt/contracts/${encodeURIComponent(pair)}`).catch(()=>null),
@@ -257,6 +282,8 @@ async function load(){
    request(`/futures/usdt/funding_rate?contract=${encodeURIComponent(pair)}&limit=100`).catch(()=>[]),
    pair==='BTC_USDT'?Promise.resolve(null):Promise.all(['1h','4h'].map(tf=>request(`/futures/usdt/candlesticks?contract=BTC_USDT&interval=${tf}&limit=60`))).catch(()=>null)
   ]);
+  const candles=responses.slice(0,intervals.length);
+  const [tickRaw,contractRaw,statsRaw,fundingRaw,btcRaw]=responses.slice(intervals.length);
   if(pair!==active){reloadPending=true;return}
   const tfData=Object.fromEntries(intervals.map((tf,i)=>[tf,summarize(candles[i],tf)]));
   const tick=Array.isArray(tickRaw)?tickRaw[0]:tickRaw,contract=contractRaw||{};
@@ -279,10 +306,10 @@ async function load(){
   const last=validNumber(tick?.last)??b15.price,change=validNumber(tick?.change_percentage);
   const resistance=b4.high,entryLow=resistance-.25*b4.atr,entryHigh=resistance+.10*b4.atr,invalidation=resistance+.75*b4.atr;
   const targets=[b4.support,b4.priorLow,b4.priorLow-4.5*b4.atr].filter(v=>Number.isFinite(v)&&v<entryLow);
-  const riskDistance=Math.max(.01,invalidation-((entryLow+entryHigh)/2));
+  const riskDistance=Math.max(Number.EPSILON,invalidation-((entryLow+entryHigh)/2));
   const rr=targets[0]!==undefined?(entryLow+entryHigh)/2-targets[0] > 0?(((entryLow+entryHigh)/2-targets[0])/riskDistance):0:0;
   const late=priceChange<=-.12||last<b4.support-2*b4.atr;
-  const prevSignal=previousSignal(pair),hadSetup=/SHORT ENTRY|SHORT SETUP/.test(prevSignal),liquidations={...liq,available:liqLive};
+  const lifecycle=lifecycleState(pair),liquidations={...liq,available:liqLive};
   const coverageItems=[
    {label:'Price',weight:20,available:true},{label:'OI',weight:15,available:Object.values(oiChanges).some(v=>v!==null)},
    {label:'Funding',weight:10,available:funding!==null},{label:'Long/Short',weight:10,available:ratioValid!==null},
@@ -291,7 +318,7 @@ async function load(){
    {label:'BTC context',weight:5,available:!!btc4}
   ];
   const dataCoverage=Math.round(coverageItems.reduce((sum,item)=>sum+(item.available?item.weight:0),0));
-  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4,bars1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated:prevSignal.includes('INVALIDATED'),coverage:dataCoverage});
+  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4:b4,bars1:b1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup:lifecycle.active,previouslyInvalidated:lifecycle.invalidated,coverage:dataCoverage});
   const dataConfidence=Math.max(0,Math.round(engine.coverage-(liqLive?8:14)-14));
   const longPercent=ratioValid===null?null:ratioValid/(1+ratioValid)*100;
   const fundingStatus=funding===null?'UNAVAILABLE':funding>=.0008?'EXTREME LONG BIAS':funding>=.0005?'HIGH LONG BIAS':funding>0?'POSITIVE':'NEUTRAL / NEGATIVE';
@@ -300,14 +327,15 @@ async function load(){
   const invalidated=engine.invalidated;
   const status=engine.decision;
   const levels={entry:[entryLow,entryHigh],invalidation,targets};
-  recordSignal(pair,engine,levels);
+  saveLifecycle(pair,engine);recordSignal(pair,engine,levels);
   $('price').textContent=fmt(last);$('change').textContent=pct(change!==null?change/100:priceChange);$('change').className='small '+((change!==null?change<0:priceChange<0)?'down':'up');
   $('updated').textContent='LIVE · '+new Date().toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   $('squeezeScore').textContent=engine.squeeze.score;$('bearScore').textContent=engine.bearish.score;$('setupScore').textContent=engine.shortScore;$('entryScore').textContent=engine.entry.score;
   $('squeezeBar').style.width=engine.squeeze.score+'%';$('bearBar').style.width=engine.bearish.score+'%';$('setupBar').style.width=engine.shortScore+'%';$('entryBar').style.width=engine.entry.score+'%';
-  $('phase').textContent=`${status} · ${engine.squeeze.score>=60?'PROBABLE LONG SQUEEZE':'SQUEEZE NOT ESTABLISHED'} · RISK ${risk}`;
+  $('phase').textContent=`${status} · ${engine.probableSqueeze?'PROBABLE LONG SQUEEZE':engine.squeeze.score>=60?'SQUEEZE RISK ELEVATED':'SQUEEZE NOT ESTABLISHED'} · RISK ${risk}`;
   $('decision').textContent=invalidated?'⚫ INVALIDATED':late&&engine.setup?'⚠️ LATE SHORT — entry blocked':rr<1.5&&engine.setup?'SHORT ENTRY BLOCKED — POOR RISK/REWARD':status;
-  $('confidence').textContent=`CONFIDENCE: ${dataConfidence}% · liquidation direction UNKNOWN · whale data unavailable`;
+  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · liquidation direction UNKNOWN · whale data unavailable`;
+  $('squeezeEvidence').textContent=`${engine.probableSqueeze?'PROBABLE LONG SQUEEZE':'No complete probable-squeeze confluence'} · Price ${priceChange<0?'↓':'↑'} ${pct(priceChange)} · OI 1H ${pct(oi1h)} · Funding ${funding===null?'н/д':pct(funding)} · LONG ${longPercent===null?'н/д':longPercent.toFixed(0)+'%'} · liquidation ${liq.spike?'SPIKE DETECTED':liqLive?'activity not elevated':'UNAVAILABLE'} · volume ${Number.isFinite(volumeRatio)?'RVOL '+volumeRatio.toFixed(2)+'×':'н/д'} · liquidation direction UNKNOWN`;
   paintTF(Object.values(tfData));
   const oiText=['15m','30m','1h','4h','24h'].map(k=>`${k} ${oiChanges[k]===null?'н/д':pct(oiChanges[k])}`).join(' · ')+` · ${b1.change1h<0&&oi1h!==null&&oi1h<0?'price↓ + OI↓: long reduction / possible liquidation':b1.change1h<0&&oi1h!==null&&oi1h>0?'price↓ + OI↑: short buildup':b1.change1h>0&&oi1h!==null&&oi1h>0?'price↑ + OI↑: long buildup':b1.change1h>0&&oi1h!==null&&oi1h<0?'price↑ + OI↓: short covering':'OI/price context unavailable'}`;
   const lsrText=ratioValid===null?'н/д':`LONG ${longPercent.toFixed(0)}% / SHORT ${(100-longPercent).toFixed(0)}% · L/S ${ratioValid.toFixed(2)} · 1h ${pct(lsrChanges['1h'])} · 4h ${pct(lsrChanges['4h'])} · 24h ${pct(lsrChanges['24h'])} · ${ratioValid>=1.7?'LONG CROWDING HIGH':ratioValid>=1.3?'LONG CROWDING MODERATE':'crowding low'}`;
@@ -317,14 +345,14 @@ async function load(){
   setMetric('liquidations',liqLive?`${liq.count} events · ${fmt(liq.quantity)} contracts · ${liq.spike?'SPIKE / ACCELERATION':'no abnormal spike'} · activity ${liq.count>0?'DETECTED':'not detected'} · Direction: UNKNOWN`:'UNAVAILABLE · WebSocket disconnected');
   setMetric('volume',Number.isFinite(volumeRatio)?`RVOL ${volumeRatio.toFixed(2)}× · ${volumeRatio>=3?'EXTREME':volumeRatio>=1.5?'HIGH':'NORMAL'}`:'UNAVAILABLE',volumeRatio>=1.5?'down':'');
   setMetric('obv',`${b1.obvBear?'↓ bearish':'↑/flat'} · slope ${pct(b1.obvSlope)} · ${b1.obvDivergence?'BEARISH DIVERGENCE':'no bearish divergence'}`,b1.obvBear?'down':'');
-  setMetric('macd',`MACD ${fmt(b4.macd)} · signal ${fmt(b4.signal)} · hist ${fmt(b4.hist)} · ${b4.bearishCrossover?'bearish crossover':b4.macdBear?'below signal':'no bearish crossover'}${b4.histogramAcceleration?' · negative acceleration':''}`,b4.macdBear?'down':'');
-  setMetric('structure',`${b4.lowerHigh?'LOWER HIGH · ':''}${b4.lowerLow?'LOWER LOW · ':''}${b4.rejection?'resistance rejection · ':''}${b4.broke?'BOS/support break':'support intact'}${b4.broke&&b4.lowerHigh?' · bearish structure':''}`,b4.broke?'down':'');
+  setMetric('macd',`MACD ${fmt(b4.macd)} · signal ${fmt(b4.signal)} · hist ${fmt(b4.hist)} · ${b4.bearishCrossover?'bearish crossover':b4.macdBear?'below signal':'no bearish crossover'}${b4.negativeHistogramAcceleration?' · negative acceleration':b4.histogramAcceleration?' · histogram momentum declining':''}`,b4.macdBear?'down':'');
+  setMetric('structure',`${b4.higherHigh?'HIGHER HIGH · ':''}${b4.lowerHigh?'LOWER HIGH · ':''}${b4.lowerLow?'LOWER LOW · ':''}${b4.rejection?'resistance rejection · ':''}${b4.broke?'BOS/support break':'support intact'}${b4.broke&&b4.lowerHigh?' · CHoCH bearish':''}`,b4.broke?'down':'');
   setMetric('btc',btc1&&btc4?`1H ${pct(btc1.change1h)} · 4H ${pct(btc4.change)} · ${btc4.change<-.02?'BEARISH CONFIRMATION':btc4.change>.02?'BULLISH headwind':'neutral'}`:'BTC data unavailable',btc4?.change<0?'down':'');
   $('quality').textContent=`DATA COVERAGE: ${engine.coverage}% · ${risk}`;
   const coverageRoot=$('coverageList');coverageRoot.replaceChildren();
   [...coverageItems.map(x=>({label:x.label,available:x.available})),{label:'Liquidation direction UNKNOWN',available:false},{label:'Whale data unavailable',available:false}]
    .forEach(x=>{const chip=document.createElement('span');chip.className='check '+(x.available?'ok':'missing');chip.textContent=`${x.available?'✓':'⚠'} ${x.label}`;coverageRoot.append(chip)});
-  $('confidence').textContent=`CONFIDENCE: ${dataConfidence}% · coverage adjusted for unknown liquidation direction and unavailable whale feed`;
+  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · coverage adjusted for unknown liquidation direction and unavailable whale feed`;
   renderLevels(b4,entryReady,engine.setup&&!late&&rr>=1.5,late,rr);
   const why=[],against=[];
   if(ratioValid!==null&&ratioValid>=1.5)why.push(`✓ Long crowding ${longPercent.toFixed(0)}% (L/S ${ratioValid.toFixed(2)}).`);
@@ -348,7 +376,7 @@ async function load(){
   if(!engine.squeeze.coverage)against.push('⚠ Squeeze evidence is incomplete; confidence is reduced.');
   renderList('reasons',why,'No high-confluence squeeze/bearish factors confirmed.');
   renderList('against',against,'No additional opposing factors detected.');
- }catch(e){if(pair!==active)reloadPending=true;else{$('error').style.display='block';$('error').textContent=`Не вдалося підтвердити дані Gate.io: ${e.message}. Значення не підставляються.`;$('updated').textContent='DATA UNAVAILABLE'}}
+ }catch(e){if(pair!==active)reloadPending=true;else{clearDashboard();$('error').style.display='block';$('error').textContent=`Не вдалося підтвердити дані Gate.io: ${e.message}. Значення не підставляються.`;$('updated').textContent='DATA UNAVAILABLE'}}
  finally{busy=false;if(reloadPending){reloadPending=false;load()}}
 }
 function addPair(){
@@ -371,9 +399,9 @@ $('togglePair').onclick=()=>{const p=pairs.find(x=>x.name===active);if(!p)return
 $('resetPairs').onclick=()=>{pairs=DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));active='BTC_USDT';savePairs();renderPairs();load()};
 function connectWS(){
  try{socket=new WebSocket(WS)}catch(_){setTimeout(connectWS,5000);return}
- socket.onopen=()=>{liqLive=true;socket.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}));load()};
+ socket.onopen=()=>{liqLive=true;socket.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}));wsPingTimer=setInterval(()=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.ping'}))},20000);load()};
  socket.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.channel!=='futures.public_liquidates'||m.event!=='update')return;const rows=Array.isArray(m.result)?m.result:[m.result];rows.forEach(x=>{if(!x?.contract)return;const size=Math.abs(Number(x.size)||0);if(!size)return;let t=Number(x.time_ms??x.time)||Date.now();if(t<1e12)t*=1000;(liquidations[x.contract]??=[]).push({t,size});liquidations[x.contract]=liquidations[x.contract].filter(v=>v.t>Date.now()-1800000).slice(-1000)})}catch(_){}};
- socket.onclose=()=>{liqLive=false;load();setTimeout(connectWS,5000)};socket.onerror=()=>socket.close();
+ socket.onclose=()=>{liqLive=false;if(wsPingTimer)clearInterval(wsPingTimer);load();setTimeout(connectWS,5000)};socket.onerror=()=>socket.close();
 }
 async function loadContracts(){
  try{const contracts=await request('/futures/usdt/contracts');contracts.forEach(c=>{if(c.name?.endsWith('_USDT')&&c.in_delisting!==true)knownPairs.add(c.name)});renderAllPairs()}catch(_){renderAllPairs()}
