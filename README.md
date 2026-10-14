@@ -1,2 +1,2 @@
 # lifecycle-widget
-bitav widget 
+bitav widget
