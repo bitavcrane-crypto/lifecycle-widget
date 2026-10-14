@@ -15,9 +15,9 @@ header{display:flex;align-items:center;gap:7px;margin-bottom:10px}
 header select{min-width:0;flex:1;font-weight:700}
 h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
 .muted,.small{color:var(--muted)}.small{font-size:.74rem}.quiet{color:var(--quiet)}
-#manage{display:grid;grid-template-columns:minmax(0,1fr) repeat(7,auto);gap:5px;margin:8px 0}
-#manage input{min-width:0;text-transform:uppercase}
-#manage button{padding:8px 9px}
+#manage{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:8px 0}
+#manage input{grid-column:1/-1;min-width:0;text-transform:uppercase}
+#manage button{padding:8px 4px}
 #pairList{display:flex;gap:6px;overflow:auto;padding-bottom:8px}
 .chip{white-space:nowrap;padding:5px 8px;font-size:.75rem}.chip.active{border-color:var(--blue)}
 #priceRow{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:9px 0}
@@ -38,6 +38,9 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
 #levels{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}
 .level{padding:7px;background:#0e1420;border-radius:7px}.level b{display:block;font-size:.65rem;color:var(--muted)}
 #reasons{padding-left:18px;margin-top:5px;color:var(--muted);font-size:.8rem}
+#coverageList{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.check{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:.68rem;color:var(--muted)}
+.check.ok{color:var(--green)}.check.missing{color:var(--yellow)}
 #error{display:none;color:var(--red);padding:10px;border:1px solid #713543;border-radius:9px;margin-top:8px}
 #hint{font-size:.69rem;color:var(--quiet);line-height:1.55;margin-top:12px}
 @media(max-width:360px){body{padding:10px}.scores{grid-template-columns:1fr 1fr}.score{padding:9px}.score strong{font-size:1.5rem}}
@@ -89,6 +92,7 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
   <div class="metric"><div class="label">TOKEN UNLOCK RISK</div><div class="value warn" id="unlock">UNKNOWN · unlock provider unavailable</div></div>
   <div class="metric"><div class="label">DATA COVERAGE / RISK</div><div class="value" id="quality">—</div></div>
 </section>
+<div class="panel"><b>DATA QUALITY</b><div id="coverageList"></div></div>
 <div class="panel"><b id="levelsTitle">SHORT ENTRY ZONE · ATR / swing</b><div id="levels"><div class="small">Очікування даних…</div></div></div>
 <div class="panel"><b>WHY?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul><b>AGAINST SHORT</b><ul id="against"><li>Дані перевіряються…</li></ul><b>DECISION</b><div id="decision">WAIT</div></div>
 <div id="error" role="alert"></div>
@@ -107,7 +111,7 @@ function readList(){
  try{const saved=JSON.parse(localStorage.getItem('lw_pairs')||'null');if(Array.isArray(saved)){const valid=saved.map(x=>typeof x==='string'?{name:x,fav:false,enabled:true}:{...x,enabled:x.enabled!==false,fav:!!x.fav}).filter(x=>x&&/^[A-Z0-9]+_USDT$/.test(x.name)).slice(0,50);if(valid.length)return valid}}catch(_){}
  return DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));
 }
-let pairs=readList(), active=localStorage.getItem('lw_gate_pair')||pairs[0].name, liquidations={}, socket=null, busy=false, reloadPending=false, liqLive=false, knownPairs=new Set(DEFAULT_PAIRS), contractInfo={};
+let pairs=readList(), active=localStorage.getItem('lw_gate_pair')||pairs[0].name, liquidations={}, socket=null, busy=false, reloadPending=false, liqLive=false, knownPairs=new Set(DEFAULT_PAIRS);
 if(!pairs.some(p=>p.name===active&&p.enabled))active=(pairs.find(p=>p.enabled)||pairs[0]).name;
 function savePairs(){localStorage.setItem('lw_pairs',JSON.stringify(pairs));localStorage.setItem('lw_gate_pair',active)}
 function renderPairs(){
@@ -115,7 +119,7 @@ function renderPairs(){
  pairs.filter(p=>p.enabled).forEach(p=>{const o=document.createElement('option');o.value=p.name;o.textContent=(p.fav?'★ ':'')+p.name;select.append(o)});
  select.value=active;
  const list=$('pairList');list.replaceChildren();
- pairs.forEach(p=>{const b=document.createElement('button');b.className='chip'+(p.name===active?' active':'');b.textContent=(p.enabled?'':'⏸ ')+(p.fav?'★ ':'')+p.name.replace('_USDT','');b.title='Увімкнено: натисніть, щоб відкрити';b.disabled=!p.enabled;b.onclick=()=>choose(p.name);list.append(b)});
+ pairs.forEach(p=>{const b=document.createElement('button');b.className='chip'+(p.name===active?' active':'');b.textContent=(p.enabled?'':'⏸ ')+(p.fav?'★ ':'')+p.name.replace('_USDT','');b.title=p.enabled?'Натисніть, щоб відкрити':'Натисніть, щоб увімкнути';b.onclick=()=>{if(!p.enabled){p.enabled=true;active=p.name;savePairs();renderPairs();load()}else choose(p.name)};list.append(b)});
  $('remove').disabled=pairs.length<=1;$('togglePair').textContent=pairs.find(p=>p.name===active)?.enabled?'⏸':'▶';
  $('togglePair').disabled=pairs.filter(p=>p.enabled).length<=1&&pairs.find(p=>p.name===active)?.enabled;
  $('favorite').textContent=pairs.find(p=>p.name===active)?.fav?'★':'☆';
@@ -151,16 +155,16 @@ function summarize(raw,tf){
  const macdBear=line[n-1]<sig[n-1]&&hist[n-1]<hist[n-2],histogramTurn=hist[n-1]<0&&hist[n-2]>=0,histogramAcceleration=hist[n-1]<hist[n-2];
  const support=Math.min(...bars.slice(-21,-1).map(c=>c.low)), broke=bars[n-1].close<support;
  const oldHigh=Math.max(...bars.slice(-31,-11).map(c=>c.high)),recentHigh=Math.max(...bars.slice(-10).map(c=>c.high));
- const rejection=recentHigh>=oldHigh&&bars[n-1].close<recentHigh-atr*.5,lowerHigh=recentHigh<oldHigh,lowerLow=bars[n-1].low<Math.min(...bars.slice(-11,-1).map(c=>c.low));
+ const rejection=recentHigh>=oldHigh&&bars[n-1].close<recentHigh-atr*.5,lowerHigh=recentHigh<oldHigh,higherHigh=recentHigh>oldHigh,lowerLow=bars[n-1].low<Math.min(...bars.slice(-11,-1).map(c=>c.low));
+ const bearishCrossover=line[n-1]<sig[n-1]&&line[n-2]>=sig[n-2];
  const change=closes[n-1]/closes[n-2]-1,change1h=closes[n-1]/closes[Math.max(0,n-Math.round(3600/secs))]-1,rv=avgVol?bars[n-1].v/avgVol:NaN;
- return {tf,bars,price:closes[n-1],change,change1h,hi,lo,atr,rv,obvBear,obvSlope,obvDivergence,macd:line[n-1],signal:sig[n-1],hist:hist[n-1],histogramTurn,histogramAcceleration,macdBear,broke,rejection,lowerHigh,lowerLow,high:Math.max(...swing.map(c=>c.high)),support,priorLow:Math.min(...bars.slice(-60,-20).map(c=>c.low))};
+ return {tf,bars,price:closes[n-1],change,change1h,hi,lo,atr,rv,obvBear,obvSlope,obvDivergence,macd:line[n-1],signal:sig[n-1],hist:hist[n-1],histogramTurn,histogramAcceleration,macdBear,bearishCrossover,broke,rejection,lowerHigh,higherHigh,lowerLow,high:Math.max(...swing.map(c=>c.high)),support,priorLow:Math.min(...bars.slice(-60,-20).map(c=>c.low))};
 }
 function liqStats(pair){
  const now=Date.now(),all=liquidations[pair]||[],recent=all.filter(e=>e.t>now-900000),previous=all.filter(e=>e.t<=now-900000&&e.t>now-1800000);
- const known=recent.filter(x=>Number.isFinite(x.usd)),prevKnown=previous.filter(x=>Number.isFinite(x.usd));
- const amount=known.length?known.reduce((s,x)=>s+x.usd,0):null,prior=prevKnown.length?prevKnown.reduce((s,x)=>s+x.usd,0):null;
- const spike=recent.length>=3&&(previous.length===0||recent.length>=previous.length*2||amount!==null&&prior>0&&amount>=prior*2);
- return {usd:amount,previous:prior,count:recent.length,previousCount:previous.length,spike,available:liqLive};
+ const quantity=recent.reduce((s,x)=>s+x.size,0),previousQuantity=previous.reduce((s,x)=>s+x.size,0);
+ const spike=recent.length>=3&&(previous.length===0||recent.length>=previous.length*2||previousQuantity>0&&quantity>=previousQuantity*2);
+ return {quantity,previousQuantity,count:recent.length,previousCount:previous.length,spike,available:liqLive};
 }
 function validNumber(value){const n=Number(value);return value!==null&&value!==undefined&&value!==''&&Number.isFinite(n)?n:null}
 function statsValue(row,key){return validNumber(row?.[key])}
@@ -170,8 +174,8 @@ function changeOver(rows,key,seconds){
  const prior=[...rows].reverse().find(r=>Number(r.time)<=target),oldValue=statsValue(prior,key);
  return lastValue!==null&&oldValue!==null&&oldValue>0?lastValue/oldValue-1:null;
 }
-function priorSetupExists(pair){
- try{const history=JSON.parse(localStorage.getItem('lw_signal_history_v2')||'[]');const last=history.filter(x=>x.pair===pair).at(-1);return !!last&&/SHORT ENTRY|SHORT SETUP/.test(last.signal)}catch(_){return false}
+function previousSignal(pair){
+ try{const history=JSON.parse(localStorage.getItem('lw_signal_history_v2')||'[]');return history.filter(x=>x.pair===pair).at(-1)?.signal||''}catch(_){return ''}
 }
 function recordSignal(pair,result,levels){
  try{
@@ -189,11 +193,12 @@ function weightedScore(parts){
  return {score:weight?Math.round(active.reduce((n,p)=>n+p.weight*clamp(p.value)/100,0)/weight*100):0,coverage:Math.round(weight)};
 }
 function evaluateSignal(input){
- const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup}=input;
+ const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated,coverage}=input;
  const squeeze=weightedScore([
   {weight:20,value:ratio===null?NaN:ratio>=2?100:ratio>=1.5?75:ratio>=1.2?45:15},
   {weight:15,value:Number.isFinite(funding)?funding>=.0008?100:funding>=.0005?80:funding>0?55:10:NaN},
-  {weight:20,value:oi1h===null?NaN:oi1h<=-.03?100:oi1h<-.01?75:oi1h<0?55:oi1h>.01?0:25},
+  {weight:12,value:oi1h===null?NaN:oi1h<=-.03?100:oi1h<-.01?75:oi1h<0?55:oi1h>.01?0:25},
+  {weight:8,value:oi4h===null?NaN:oi4h<=-.05?100:oi4h<-.02?75:oi4h<0?55:oi4h>.02?0:25},
   {weight:10,value:Number.isFinite(priceChange)?priceChange<-.025?100:priceChange<0?65:10:NaN},
   {weight:15,value:liqs.available?liqs.spike?100:liqs.count?45:0:NaN},
   {weight:20,value:Number.isFinite(volumeRatio)?volumeRatio>=3?100:volumeRatio>=2?80:volumeRatio>=1.3?60:volumeRatio>=1?35:10:NaN}
@@ -204,10 +209,10 @@ function evaluateSignal(input){
   {weight:15,value:bars4.histogramTurn&&bars4.histogramAcceleration?100:bars4.macdBear&&bars4.histogramAcceleration?85:bars4.macdBear?65:20},
   {weight:10,value:Number.isFinite(volumeRatio)?volumeRatio>=2&&priceChange<0?100:volumeRatio>=1.3&&priceChange<0?75:volumeRatio<.8?10:35:NaN},
   {weight:15,value:clamp(tfs.filter(t=>t.change<0).length/5*100)},
-  {weight:10,value:btc4h.change<-.02?100:btc1h.change<-.01?75:btc4h.change<0?55:btc4h.change>.02?0:35},
+  {weight:10,value:btc4h&&btc1h?(btc4h.change<-.02?100:btc1h.change<-.01?75:btc4h.change<0?55:btc4h.change>.02?0:35):NaN},
   {weight:15,value:oi1h!==null&&oi1h<0&&priceChange<0?80:oi1h!==null&&oi1h>0&&priceChange<0?45:35}
  ]);
- const midpoint=(entryLow+entryHigh)/2,locationScore=price>=entryLow&&price<=entryHigh?100:price>entryHigh?clamp(75-(price-entryHigh)/Math.max(1,entryHigh-entryLow)*80):clamp(75-(entryLow-price)/Math.max(1,entryHigh-entryLow)*80);
+ const midpoint=(entryLow+entryHigh)/2,zoneWidth=Math.max(Number.EPSILON,entryHigh-entryLow),locationScore=price>=entryLow&&price<=entryHigh?100:price>entryHigh?clamp(75-(price-entryHigh)/zoneWidth*80):clamp(75-(entryLow-price)/zoneWidth*80);
  const entry=weightedScore([
   {weight:30,value:locationScore},
   {weight:30,value:Number.isFinite(rr)?rr>=2.5?100:rr>=2?85:rr>=1.5?70:rr>=1?40:0:NaN},
@@ -215,12 +220,12 @@ function evaluateSignal(input){
   {weight:15,value:bars4.broke?90:bars4.rejection?65:35}
  ]);
  const shortScore=Math.round((squeeze.score+bearish.score)/2);
- const coverage=Math.round((squeeze.coverage+bearish.coverage+entry.coverage)/3);
+ const dataCoverage=Number.isFinite(coverage)?coverage:Math.round((squeeze.coverage+bearish.coverage+entry.coverage)/3);
  const setup=shortScore>=60&&squeeze.score>=55&&bearish.score>=50;
- const invalidated=!!hadSetup&&price>bars4.high+bars4.atr*.25&&oi1h!==null&&oi1h>0&&!bars4.macdBear;
- const entryReady=setup&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&coverage>=60;
+ const invalidated=!!previouslyInvalidated&&!setup||!!hadSetup&&price>bars4.high+bars4.atr*.25&&oi1h!==null&&oi1h>0&&!bars4.macdBear;
+ const entryReady=setup&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60;
  const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
- return {squeeze,bearish,entry,shortScore,coverage,setup,entryReady,invalidated,decision,midpoint};
+ return {squeeze,bearish,entry,shortScore,coverage:dataCoverage,setup,entryReady,invalidated,decision,midpoint};
 }
 function renderList(id,items,empty){
  const ul=$(id);ul.replaceChildren();
@@ -229,10 +234,11 @@ function renderList(id,items,empty){
 function renderLevels(b4,entryOK,candidate,late,rr){
  const root=$('levels');root.replaceChildren();
  $('levelsTitle').textContent=entryOK?'SHORT ENTRY ZONE · підтверджено':'POTENTIAL ZONE · не є входом';
- if(!entryOK&&!candidate){const d=document.createElement('div');d.className='small';d.textContent=late?'⚠️ LATE ENTRY — рух уже розтягнутий; не наздоганяй.':'Зона не підтверджена: потрібні структура, обсяг і прийнятний risk/reward.';root.append(d);return}
  const entryLow=b4.high-.25*b4.atr,entryHigh=b4.high+.10*b4.atr,invalid=b4.high+.75*b4.atr;
  const targets=[b4.support,b4.priorLow,b4.priorLow-4.5*b4.atr].filter(v=>Number.isFinite(v)&&v<entryLow);
- const vals=[[entryOK?'Entry':'Watch zone',`${fmt(entryLow)} – ${fmt(entryHigh)}`],['Invalidation',fmt(invalid)],['TP1',fmt(targets[0])],['TP2',fmt(targets[1])],['TP3',fmt(targets[2])],['R:R · TP1',rr.toFixed(2)]];
+ const vals=[[entryOK?'ENTRY':'Indicative zone',`${fmt(entryLow)} – ${fmt(entryHigh)}`],['INVALIDATION',fmt(invalid)],['TP1',fmt(targets[0])],['TP2',fmt(targets[1])],['TP3',fmt(targets[2])],['R:R · TP1',Number.isFinite(rr)?rr.toFixed(2):'н/д']];
+ if(late){const note=document.createElement('div');note.className='warn small';note.textContent='⚠️ LATE SHORT — рівні орієнтовні, новий SHORT не рекомендується.';root.append(note)}
+ else if(!candidate&&!entryOK){const note=document.createElement('div');note.className='small';note.textContent='Setup не підтверджений; рівні є лише довідковими.';root.append(note)}
  vals.forEach(([k,v])=>{const d=document.createElement('div');d.className='level';const b=document.createElement('b');b.textContent=k;const s=document.createElement('span');s.textContent=v;d.append(b,s);root.append(d)});
 }
 function paintTF(tfs){
@@ -254,19 +260,18 @@ async function load(){
   if(pair!==active){reloadPending=true;return}
   const tfData=Object.fromEntries(intervals.map((tf,i)=>[tf,summarize(candles[i],tf)]));
   const tick=Array.isArray(tickRaw)?tickRaw[0]:tickRaw,contract=contractRaw||{};
-  const stats=Array.isArray(statsRaw)?statsRaw.slice().filter(x=>Number.isFinite(Number(x.time))).sort((a,b)=>Number(a.time)-Number(b.time)):[];
-  const fundingHistory=Array.isArray(fundingRaw)?fundingRaw.slice().map(x=>validNumber(x.r??x.funding_rate??x.rate)).filter(Number.isFinite):[];
+  const stats=Array.isArray(statsRaw)?statsRaw.map(x=>{let time=Number(x.time??x.t);if(time>1e12)time/=1000;return {...x,time}}).filter(x=>Number.isFinite(x.time)&&x.time+300<=Date.now()/1000).sort((a,b)=>a.time-b.time):[];
+  const fundingHistory=Array.isArray(fundingRaw)?fundingRaw.slice().map(x=>({time:Number(x.time??x.t)||0,rate:validNumber(x.r??x.funding_rate??x.rate)})).filter(x=>x.rate!==null).sort((a,b)=>a.time-b.time).map(x=>x.rate):[];
   const btc1=pair==='BTC_USDT'?tfData['1h']:btcRaw?summarize(btcRaw[0],'1h'):null;
   const btc4=pair==='BTC_USDT'?tfData['4h']:btcRaw?summarize(btcRaw[1],'4h'):null;
   const oiKey=stats.some(x=>statsValue(x,'open_interest_usd')!==null)?'open_interest_usd':'open_interest';
-  const lsrKey=stats.some(x=>statsValue(x,'lsr_account')!==null)?'lsr_account':'top_lsr_account';
+  const lsrKey='lsr_account';
   const oiChanges=Object.fromEntries([['15m',900],['30m',1800],['1h',3600],['4h',14400],['24h',86400]].map(([key,seconds])=>[key,changeOver(stats,oiKey,seconds)]));
   const ratio=statsValue(stats.at(-1),lsrKey),ratioValid=ratio!==null&&ratio>0?ratio:null;
   const lsrChanges=Object.fromEntries([['1h',3600],['4h',14400],['24h',86400]].map(([key,seconds])=>[key,changeOver(stats,lsrKey,seconds)]));
-  const funding=validNumber(contract.funding_rate??tick?.funding_rate),fundingOld=fundingHistory.length>1?fundingHistory[Math.max(0,fundingHistory.length-9)]:null;
+  const funding=validNumber(contract.funding_rate??tick?.funding_rate??stats.at(-1)?.funding_rate),fundingOld=fundingHistory.length>1?fundingHistory[Math.max(0,fundingHistory.length-9)]:null;
   const fundingChange=funding!==null&&fundingOld!==null?funding-fundingOld:null;
   const fundingPercentile=funding!==null&&fundingHistory.length?fundingHistory.filter(v=>v<=funding).length/fundingHistory.length*100:null;
-  if(contract)contractInfo[pair]=contract;
   const b15=tfData['15m'],b1=tfData['1h'],b4=tfData['4h'],liq=liqStats(pair);
   const volumeRatio=b15.rv;
   const oi1h=oiChanges['1h'],oi4h=oiChanges['4h'],oi24h=oiChanges['24h'];
@@ -277,8 +282,16 @@ async function load(){
   const riskDistance=Math.max(.01,invalidation-((entryLow+entryHigh)/2));
   const rr=targets[0]!==undefined?(entryLow+entryHigh)/2-targets[0] > 0?(((entryLow+entryHigh)/2-targets[0])/riskDistance):0:0;
   const late=priceChange<=-.12||last<b4.support-2*b4.atr;
-  const hadSetup=priorSetupExists(pair),liquidations={...liq,available:liqLive};
-  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4,bars1,btc1h:btc1||{change1h:0,change:0},btc4h:btc4||{change:0},price:last,entryLow,entryHigh,rr,late,hadSetup});
+  const prevSignal=previousSignal(pair),hadSetup=/SHORT ENTRY|SHORT SETUP/.test(prevSignal),liquidations={...liq,available:liqLive};
+  const coverageItems=[
+   {label:'Price',weight:20,available:true},{label:'OI',weight:15,available:Object.values(oiChanges).some(v=>v!==null)},
+   {label:'Funding',weight:10,available:funding!==null},{label:'Long/Short',weight:10,available:ratioValid!==null},
+   {label:'Volume',weight:10,available:Number.isFinite(volumeRatio)},{label:'OBV',weight:10,available:Number.isFinite(b1.obvSlope)},
+   {label:'MACD',weight:10,available:Number.isFinite(b4.macd)},{label:'Liquidation activity',weight:10,available:liqLive},
+   {label:'BTC context',weight:5,available:!!btc4}
+  ];
+  const dataCoverage=Math.round(coverageItems.reduce((sum,item)=>sum+(item.available?item.weight:0),0));
+  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4,bars1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated:prevSignal.includes('INVALIDATED'),coverage:dataCoverage});
   const dataConfidence=Math.max(0,Math.round(engine.coverage-(liqLive?8:14)-14));
   const longPercent=ratioValid===null?null:ratioValid/(1+ratioValid)*100;
   const fundingStatus=funding===null?'UNAVAILABLE':funding>=.0008?'EXTREME LONG BIAS':funding>=.0005?'HIGH LONG BIAS':funding>0?'POSITIVE':'NEUTRAL / NEGATIVE';
@@ -288,34 +301,31 @@ async function load(){
   const status=engine.decision;
   const levels={entry:[entryLow,entryHigh],invalidation,targets};
   recordSignal(pair,engine,levels);
-  const qualityChecks=[
-   ['Price',true],['OI',oi1h!==null],['Funding',funding!==null],['Long/Short',ratioValid!==null],
-   ['Volume',Number.isFinite(volumeRatio)],['OBV',Number.isFinite(b1.obvSlope)],['MACD',Number.isFinite(b4.macd)],
-   ['Liquidation direction unavailable',false],['Whale data unavailable',false]
-  ];
   $('price').textContent=fmt(last);$('change').textContent=pct(change!==null?change/100:priceChange);$('change').className='small '+((change!==null?change<0:priceChange<0)?'down':'up');
   $('updated').textContent='LIVE · '+new Date().toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   $('squeezeScore').textContent=engine.squeeze.score;$('bearScore').textContent=engine.bearish.score;$('setupScore').textContent=engine.shortScore;$('entryScore').textContent=engine.entry.score;
   $('squeezeBar').style.width=engine.squeeze.score+'%';$('bearBar').style.width=engine.bearish.score+'%';$('setupBar').style.width=engine.shortScore+'%';$('entryBar').style.width=engine.entry.score+'%';
   $('phase').textContent=`${status} · ${engine.squeeze.score>=60?'PROBABLE LONG SQUEEZE':'SQUEEZE NOT ESTABLISHED'} · RISK ${risk}`;
-  $('decision').textContent=late&&!entryReady?'⚠️ LATE SHORT — entry blocked':rr<1.5&&engine.setup?'SHORT ENTRY BLOCKED — POOR RISK/REWARD':status;
+  $('decision').textContent=invalidated?'⚫ INVALIDATED':late&&engine.setup?'⚠️ LATE SHORT — entry blocked':rr<1.5&&engine.setup?'SHORT ENTRY BLOCKED — POOR RISK/REWARD':status;
   $('confidence').textContent=`CONFIDENCE: ${dataConfidence}% · liquidation direction UNKNOWN · whale data unavailable`;
   paintTF(Object.values(tfData));
-  const oiText=['15m','30m','1h','4h','24h'].map(k=>`${k} ${oiChanges[k]===null?'н/д':pct(oiChanges[k])}`).join(' · ');
+  const oiText=['15m','30m','1h','4h','24h'].map(k=>`${k} ${oiChanges[k]===null?'н/д':pct(oiChanges[k])}`).join(' · ')+` · ${b1.change1h<0&&oi1h!==null&&oi1h<0?'price↓ + OI↓: long reduction / possible liquidation':b1.change1h<0&&oi1h!==null&&oi1h>0?'price↓ + OI↑: short buildup':b1.change1h>0&&oi1h!==null&&oi1h>0?'price↑ + OI↑: long buildup':b1.change1h>0&&oi1h!==null&&oi1h<0?'price↑ + OI↓: short covering':'OI/price context unavailable'}`;
   const lsrText=ratioValid===null?'н/д':`LONG ${longPercent.toFixed(0)}% / SHORT ${(100-longPercent).toFixed(0)}% · L/S ${ratioValid.toFixed(2)} · 1h ${pct(lsrChanges['1h'])} · 4h ${pct(lsrChanges['4h'])} · 24h ${pct(lsrChanges['24h'])} · ${ratioValid>=1.7?'LONG CROWDING HIGH':ratioValid>=1.3?'LONG CROWDING MODERATE':'crowding low'}`;
   setMetric('funding',funding===null?'UNAVAILABLE':`${pct(funding)} · ${fundingStatus} · trend ${fundingChange===null?'н/д':pct(fundingChange)} · percentile ${fundingPercentile===null?'н/д':fundingPercentile.toFixed(0)+'%'}`,funding!==null&&funding>=.0005?'warn':'');
   setMetric('oi',oiText,oi1h!==null&&oi1h<0?'down':'');
   setMetric('ratio',lsrText,ratioValid!==null&&ratioValid>=1.5?'warn':'');
-  const liqAmount=liq.usd===null?'amount n/a':`notional est. $${(liq.usd/1e6).toFixed(3)}M`;
-  setMetric('liquidations',liqLive?`${liq.count} events · ${liqAmount} · ${liq.spike?'SPIKE / ACCELERATION':'no abnormal spike'} · Direction: UNKNOWN`:'UNAVAILABLE · WebSocket disconnected');
+  setMetric('liquidations',liqLive?`${liq.count} events · ${fmt(liq.quantity)} contracts · ${liq.spike?'SPIKE / ACCELERATION':'no abnormal spike'} · activity ${liq.count>0?'DETECTED':'not detected'} · Direction: UNKNOWN`:'UNAVAILABLE · WebSocket disconnected');
   setMetric('volume',Number.isFinite(volumeRatio)?`RVOL ${volumeRatio.toFixed(2)}× · ${volumeRatio>=3?'EXTREME':volumeRatio>=1.5?'HIGH':'NORMAL'}`:'UNAVAILABLE',volumeRatio>=1.5?'down':'');
   setMetric('obv',`${b1.obvBear?'↓ bearish':'↑/flat'} · slope ${pct(b1.obvSlope)} · ${b1.obvDivergence?'BEARISH DIVERGENCE':'no bearish divergence'}`,b1.obvBear?'down':'');
-  setMetric('macd',`MACD ${fmt(b4.macd)} · signal ${fmt(b4.signal)} · hist ${fmt(b4.hist)} · ${b4.macdBear?'bearish crossover':'no bearish crossover'}${b4.histogramAcceleration?' · negative acceleration':''}`,b4.macdBear?'down':'');
+  setMetric('macd',`MACD ${fmt(b4.macd)} · signal ${fmt(b4.signal)} · hist ${fmt(b4.hist)} · ${b4.bearishCrossover?'bearish crossover':b4.macdBear?'below signal':'no bearish crossover'}${b4.histogramAcceleration?' · negative acceleration':''}`,b4.macdBear?'down':'');
   setMetric('structure',`${b4.lowerHigh?'LOWER HIGH · ':''}${b4.lowerLow?'LOWER LOW · ':''}${b4.rejection?'resistance rejection · ':''}${b4.broke?'BOS/support break':'support intact'}${b4.broke&&b4.lowerHigh?' · bearish structure':''}`,b4.broke?'down':'');
   setMetric('btc',btc1&&btc4?`1H ${pct(btc1.change1h)} · 4H ${pct(btc4.change)} · ${btc4.change<-.02?'BEARISH CONFIRMATION':btc4.change>.02?'BULLISH headwind':'neutral'}`:'BTC data unavailable',btc4?.change<0?'down':'');
   $('quality').textContent=`DATA COVERAGE: ${engine.coverage}% · ${risk}`;
+  const coverageRoot=$('coverageList');coverageRoot.replaceChildren();
+  [...coverageItems.map(x=>({label:x.label,available:x.available})),{label:'Liquidation direction UNKNOWN',available:false},{label:'Whale data unavailable',available:false}]
+   .forEach(x=>{const chip=document.createElement('span');chip.className='check '+(x.available?'ok':'missing');chip.textContent=`${x.available?'✓':'⚠'} ${x.label}`;coverageRoot.append(chip)});
   $('confidence').textContent=`CONFIDENCE: ${dataConfidence}% · coverage adjusted for unknown liquidation direction and unavailable whale feed`;
-  renderLevels(b4,entryReady,engine.setup,late,rr);
+  renderLevels(b4,entryReady,engine.setup&&!late&&rr>=1.5,late,rr);
   const why=[],against=[];
   if(ratioValid!==null&&ratioValid>=1.5)why.push(`✓ Long crowding ${longPercent.toFixed(0)}% (L/S ${ratioValid.toFixed(2)}).`);
   if(funding!==null&&funding>=.0005)why.push(`✓ Extreme positive funding ${pct(funding)} supports squeeze-risk context.`);
@@ -344,24 +354,26 @@ async function load(){
 function addPair(){
  const name=cleanPair($('pairInput').value);
  if(!/^[A-Z0-9]+_USDT$/.test(name)){ $('pairInput').setCustomValidity('Формат контракту: BTC_USDT');$('pairInput').reportValidity();return }
- if(pairs.some(p=>p.name===name)){choose(name);$('pairInput').value='';return}
+ if(pairs.some(p=>p.name===name)){pairs.find(p=>p.name===name).enabled=true;choose(name);renderPairs();$('pairInput').value='';return}
  if(pairs.length>=50){alert('Максимум 50 пар.');return}
- pairs.push({name,fav:false});active=name;savePairs();renderPairs();$('pairInput').value='';load();
+ pairs.push({name,fav:false,enabled:true});active=name;savePairs();renderPairs();$('pairInput').value='';load();
 }
 $('pair').onchange=()=>choose($('pair').value);
-$('prev').onclick=()=>choose(pairs[(pairs.findIndex(p=>p.name===active)-1+pairs.length)%pairs.length].name);
-$('next').onclick=()=>choose(pairs[(pairs.findIndex(p=>p.name===active)+1)%pairs.length].name);
+$('prev').onclick=()=>{const enabled=pairs.filter(p=>p.enabled),i=enabled.findIndex(p=>p.name===active);choose(enabled[(i-1+enabled.length)%enabled.length].name)};
+$('next').onclick=()=>{const enabled=pairs.filter(p=>p.enabled),i=enabled.findIndex(p=>p.name===active);choose(enabled[(i+1)%enabled.length].name)};
 $('moveUp').onclick=()=>movePair(-1);$('moveDown').onclick=()=>movePair(1);
 $('refresh').onclick=load;$('add').onclick=addPair;
 $('pairInput').addEventListener('input',()=> $('pairInput').setCustomValidity(''));
 $('pairInput').addEventListener('keydown',e=>{if(e.key==='Enter')addPair()});
-$('remove').onclick=()=>{if(pairs.length<=1)return;pairs=pairs.filter(p=>p.name!==active);active=pairs[0].name;savePairs();renderPairs();load()};
+$('remove').onclick=()=>{if(pairs.length<=1)return;pairs=pairs.filter(p=>p.name!==active);if(!pairs.some(p=>p.enabled))pairs[0].enabled=true;active=(pairs.find(p=>p.enabled)||pairs[0]).name;savePairs();renderPairs();load()};
 $('favorite').onclick=()=>{const p=pairs.find(x=>x.name===active);if(p){p.fav=!p.fav;savePairs();renderPairs();$('favorite').textContent=p.fav?'★':'☆'}};
+$('togglePair').onclick=()=>{const p=pairs.find(x=>x.name===active);if(!p)return;if(p.enabled&&pairs.filter(x=>x.enabled).length<=1)return;p.enabled=!p.enabled;if(!p.enabled)active=(pairs.find(x=>x.enabled)||pairs[0]).name;else active=p.name;savePairs();renderPairs();load()};
+$('resetPairs').onclick=()=>{pairs=DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));active='BTC_USDT';savePairs();renderPairs();load()};
 function connectWS(){
  try{socket=new WebSocket(WS)}catch(_){setTimeout(connectWS,5000);return}
- socket.onopen=()=>socket.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}));
- socket.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.channel!=='futures.public_liquidates'||m.event!=='update')return;liqLive=true;const rows=Array.isArray(m.result)?m.result:[m.result];rows.forEach(x=>{if(!x?.contract)return;const usd=Math.abs(Number(x.size)||0)*Number(x.price||0);if(!usd)return;(liquidations[x.contract]??=[]).push({t:Number(x.time_ms)||Date.now(),usd});liquidations[x.contract]=liquidations[x.contract].filter(v=>v.t>Date.now()-1800000).slice(-1000)})}catch(_){}};
- socket.onclose=()=>{liqLive=false;setTimeout(connectWS,5000)};socket.onerror=()=>socket.close();
+ socket.onopen=()=>{liqLive=true;socket.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}));load()};
+ socket.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.channel!=='futures.public_liquidates'||m.event!=='update')return;const rows=Array.isArray(m.result)?m.result:[m.result];rows.forEach(x=>{if(!x?.contract)return;const size=Math.abs(Number(x.size)||0);if(!size)return;let t=Number(x.time_ms??x.time)||Date.now();if(t<1e12)t*=1000;(liquidations[x.contract]??=[]).push({t,size});liquidations[x.contract]=liquidations[x.contract].filter(v=>v.t>Date.now()-1800000).slice(-1000)})}catch(_){}};
+ socket.onclose=()=>{liqLive=false;load();setTimeout(connectWS,5000)};socket.onerror=()=>socket.close();
 }
 async function loadContracts(){
  try{const contracts=await request('/futures/usdt/contracts');contracts.forEach(c=>{if(c.name?.endsWith('_USDT')&&c.in_delisting!==true)knownPairs.add(c.name)});renderAllPairs()}catch(_){renderAllPairs()}
