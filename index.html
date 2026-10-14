@@ -24,6 +24,7 @@ button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(
 .m{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 11px;min-width:0}
 .m .k{font-size:.66rem;color:var(--tx3)}.m .val{font-size:.92rem;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;overflow-wrap:anywhere}
 .up{color:var(--green)} .dn{color:var(--red)}
+#mShortEntry{grid-column:1/-1}
 #hint{margin-top:14px;font-size:.7rem;color:var(--tx3);line-height:1.5}
 #err{display:none;margin-top:12px;padding:10px;border-radius:10px;border:1px solid rgba(246,70,93,.4);color:var(--red);font-size:.8rem;line-height:1.4}
 </style>
@@ -44,10 +45,13 @@ button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(
 <div class="m"><div class="k">OBV позиція</div><div class="val" id="mObv">—</div></div>
 <div class="m"><div class="k">MACD 15м</div><div class="val" id="mMacd">—</div></div>
 <div class="m"><div class="k">Ліквідації за 15хв</div><div class="val" id="mLiq">—</div></div>
+<div class="m"><div class="k">Ризик лонг-сквізу</div><div class="val" id="mLongSqueeze">—</div></div>
+<div class="m"><div class="k">Надходження на біржі · кити/команди</div><div class="val" id="mFlow">н/д · потрібне джерело</div></div>
 <div class="m"><div class="k">Ціль (магніт)</div><div class="val" id="mTgt">—</div></div>
+<div class="m" id="mShortEntry"><div class="k">Шорт після лонг-сквізу · евристична оцінка</div><div class="val" id="shortEntry">Очікування даних…</div></div>
 </div>
 <div id="err"></div>
-<div id="hint">Дані: Gate.io USDT Futures. Автооновлення кожні 60 с; публічні ліквідації через WebSocket, якщо з'єднання доступне. Деякі метрики Gate.io відрізняються від Binance, тому окремі фактори є наближеннями. Для роботи потрібен інтернет. Додай сторінку на головний екран через меню браузера → «Додати на головний екран». Індикатори — допоміжні оцінки, не гарантія руху ціни.</div>
+<div id="hint">Дані: Gate.io USDT Futures. Автооновлення кожні 60 с; публічні ліквідації через WebSocket, якщо з'єднання доступне. Деякі метрики Gate.io відрізняються від Binance, тому окремі фактори є наближеннями. Надходження монет на біржі та рухи команд/китів потребують окремого ончейн-провайдера і не враховані. Ліквідації показані без надійного поділу на напрямок. Модель — евристичний фільтр, не навчений прогноз і не гарантія руху ціни. Для роботи потрібен інтернет. Додай сторінку на головний екран через меню браузера → «Додати на головний екран».</div>
 <script>
 const BASE='https://api.gateio.ws/api/v4';
 const WS_URL='wss://fx-ws.gateio.ws/v4/ws/usdt';
@@ -56,6 +60,7 @@ let sym=localStorage.getItem('lw_gate_pair')||'BTC_USDT', LIQ={}, ws, busy=false
 const $=id=>document.getElementById(id);
 const clamp=(x,a=0,b=100)=>Math.max(a,Math.min(b,x));
 const lin=(x,x0,x1)=>clamp((x-x0)/(x1-x0)*100);
+const numOrNaN=v=>v==null||v===''?NaN:Number(v);
 const fmt=p=>{if(!Number.isFinite(p))return'—';return p>=1000?p.toLocaleString('en-US',{maximumFractionDigits:2}):p>=10?p.toFixed(3):p>=0.1?p.toFixed(4):p.toFixed(7)};
 const pct=n=>(n>=0?'+':'')+(n*100).toFixed(2)+'%';
 const sel=$('pair');
@@ -95,7 +100,7 @@ async function load(){
  const latest=st[st.length-1]||{},old=st[0]||{};
  const oiNow=Number(latest.open_interest_usd ?? latest.open_interest),oiOld=Number(old.open_interest_usd ?? old.open_interest);
  const oi24=oiNow>0&&oiOld>0?oiNow/oiOld-1:null;
- const lsrA=Number(latest.lsr_account),lsrTop=Number(latest.top_lsr_account),lsrTaker=Number(latest.lsr_taker);
+ const lsrA=numOrNaN(latest.lsr_account),lsrTop=numOrNaN(latest.top_lsr_account),lsrTaker=numOrNaN(latest.lsr_taker);
  const cl=kl.map(c=>c.c),vol=kl.map(c=>c.v),hi=kl.map(c=>c.h),lo=kl.map(c=>c.l);
  let ob=0;const obv=kl.map((c,i)=>{if(i)ob+=(c.c>kl[i-1].c?1:c.c<kl[i-1].c?-1:0)*c.v;return ob});
  const f=ema(cl,12),slow=ema(cl,26),line=cl.map((_,i)=>f[i]-slow[i]),sig=ema(line,9),hist=line.map((v,i)=>v-sig[i]);
@@ -110,15 +115,41 @@ async function load(){
  const F6=oMax>oMin?(obv[obv.length-1]-oMin)/(oMax-oMin)*100:50;
  const avgH=hist.slice(-50).reduce((a,h)=>a+Math.abs(h),0)/50;
  const F7=clamp(50+(hist[hist.length-1]/(avgH||1))*25);
- const oiFlat=F2*(1-Math.abs(F3-50)/50);
- const obvDiv=F3*(1-F6/100);
+ const L=statsLiq();
+ const shortFunding=clamp(50-fr/0.001*50);
+ const shortRatios=[lsrA,lsrTop].filter(v=>Number.isFinite(v)&&v>0);
+ const avgLongShort=shortRatios.length?shortRatios.reduce((a,b)=>a+b,0)/shortRatios.length:null;
+ const shortCrowding=avgLongShort===null?50:clamp((1.5-avgLongShort)*100);
+ const longFunding=clamp(50+fr/0.001*50);
+ const longCrowding=avgLongShort===null?50:clamp((avgLongShort-0.5)*100);
+ const oiBuild=oi24===null?50:lin(oi24,-0.10,0.20);
+ const liqActivity=clamp(L.tot/1000000*100);
+ const shortSqueeze= Math.round(0.20*shortFunding+0.20*shortCrowding+0.20*oiBuild+0.25*F3+0.15*liqActivity);
+ const longSqueeze=Math.round(0.24*longFunding+0.24*longCrowding+0.20*oiBuild+0.20*lin(-px24,0,0.15)+0.12*liqActivity);
+ const recentHigh=Math.max(...hi.slice(-16));
+ const recentLow=Math.min(...lo.slice(-96));
+ const priceRank=recentHigh>recentLow?clamp((price-recentLow)/(recentHigh-recentLow)*100):50;
+ const pullback=recentHigh>0?(recentHigh-price)/recentHigh:0;
+ const oiUnwind=oi24===null?50:lin(-oi24,0,0.15);
+ const reversal=line[line.length-1]<sig[sig.length-1]&&hist[hist.length-1]<hist[hist.length-2];
+ const reversalScore=reversal?100:line[line.length-1]<sig[sig.length-1]?60:hist[hist.length-1]<hist[hist.length-2]?35:0;
+ const obvDivergence=priceRank>=75&&F6<70?100:0;
  const pump=Math.round(0.15*(100-F1)+0.20*F2+0.15*F3+0.15*(100-F4)+0.20*F5+0.10*F6+0.05*F7);
- const sq=Math.round(0.20*F1+0.25*oiFlat+0.15*F4+0.15*(100-F5)+0.10*obvDiv+0.10*F3+0.05*(100-F7));
+ const sq=shortSqueeze;
+ const entryScore=Math.round(0.25*longSqueeze+0.15*priceRank+0.20*oiUnwind+0.25*reversalScore+0.10*(100-F6)+0.05*liqActivity);
+ const entryReady=longSqueeze>=55&&priceRank>=50&&pullback>=0.004&&reversal&&oi24!==null&&oi24<=0.02;
  $('px').textContent=fmt(price);const cg=$('chg');cg.textContent=pct(px24);cg.className=px24>=0?'up':'dn';
  $('upd').textContent='оновлено '+new Date().toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
  $('arcP').style.strokeDashoffset=245*(1-pump/100);$('arcP').style.stroke=pump>=60?'var(--green)':pump>=40?'#3ba37c':'#5d6b82';
  $('arcS').style.strokeDashoffset=245*(1-sq/100);$('arcS').style.stroke=sq>=60?'var(--red)':sq>=40?'#c05a6a':'#5d6b82';
  $('valP').textContent=pump;$('valS').textContent=sq;$('subP').textContent='скор '+pump+'/100';$('subS').textContent='скор '+sq+'/100';
+ const shortEntry=$('shortEntry');
+ if(entryReady&&entryScore>=60){shortEntry.textContent='Можливий шорт після підтвердження · '+entryScore+'/100';shortEntry.className='val dn'}
+ else if(longSqueeze>=65){shortEntry.textContent='Лонг-сквіз активний — не наздоганяй рух, чекай підтвердження · '+entryScore+'/100';shortEntry.className='val dn'}
+ else if(entryScore>=45){shortEntry.textContent='Спостерігай: чекай пробою підтримки · '+entryScore+'/100';shortEntry.className='val'}
+ else{shortEntry.textContent='Сигналу на шорт немає · '+entryScore+'/100';shortEntry.className='val'}
+ $('mLongSqueeze').textContent=longSqueeze+'/100';
+ $('mLongSqueeze').className=longSqueeze>=60?'val dn':'val';
  const ph=$('phase');
  if(sq>=60){ph.innerHTML='<b style="color:var(--red)">Стадія сквізу.</b> Можливий рух через ліквідації. Не входь у шорт без підтвердження.';ph.style.borderColor='rgba(246,70,93,.45)'}
  else if(pump>=60&&sq<40){ph.innerHTML='<b style="color:var(--green)">Стадія розкручування.</b> Шорти — паливо. Перевір ретест пробою та обсяг перед входом.';ph.style.borderColor='rgba(14,203,129,.45)'}
@@ -131,7 +162,7 @@ async function load(){
  $('mTk').textContent=Number.isFinite(lsrTaker)?lsrTaker.toFixed(2)+' (L/S)':(prevVol>0?(lastVol/prevVol).toFixed(2)+'× обсяг':'н/д');
  $('mObv').textContent=F6.toFixed(0)+'% діапазону';
  const bear=line[line.length-1]<sig[sig.length-1];$('mMacd').textContent=bear?'ведмежий':'бичачий';$('mMacd').className=bear?'val dn':'val up';
- const L=statsLiq();$('mLiq').textContent=L.tot>0?'$'+(L.tot/1e6).toFixed(2)+'M'+(L.big>=300000?' 💀':''):'—';
+ $('mLiq').textContent=L.tot>0?'$'+(L.tot/1e6).toFixed(2)+'M'+(L.big>=300000?' 💀':''):'—';
  $('mTgt').textContent=fmt(Math.min(...lo.slice(-96)));
  }catch(e){$('err').style.display='block';$('err').textContent='Не вдалося завантажити дані Gate.io: '+e.message+'. Перевір інтернет або спробуй відкрити сторінку в Chrome.'}
  finally{busy=false}
