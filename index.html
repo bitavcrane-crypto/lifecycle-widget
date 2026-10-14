@@ -45,11 +45,13 @@ button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(
 <div class="m"><div class="k">OBV позиція</div><div class="val" id="mObv">—</div></div>
 <div class="m"><div class="k">MACD 15м</div><div class="val" id="mMacd">—</div></div>
 <div class="m"><div class="k">Ліквідації за 15хв</div><div class="val" id="mLiq">—</div></div>
+<div class="m"><div class="k">Ризик лонг-сквізу</div><div class="val" id="mLongSqueeze">—</div></div>
+<div class="m"><div class="k">Надходження на біржі · кити/команди</div><div class="val" id="mFlow">н/д · потрібне джерело</div></div>
 <div class="m"><div class="k">Ціль (магніт)</div><div class="val" id="mTgt">—</div></div>
-<div class="m" id="mShortEntry"><div class="k">Модель шорт-входу · евристична оцінка</div><div class="val" id="shortEntry">Очікування даних…</div></div>
+<div class="m" id="mShortEntry"><div class="k">Шорт після лонг-сквізу · евристична оцінка</div><div class="val" id="shortEntry">Очікування даних…</div></div>
 </div>
 <div id="err"></div>
-<div id="hint">Дані: Gate.io USDT Futures. Автооновлення кожні 60 с; публічні ліквідації через WebSocket, якщо з'єднання доступне. Деякі метрики Gate.io відрізняються від Binance, тому окремі фактори є наближеннями. Командні та ончейн-потоки китів не доступні з цих запитів і не враховані; ліквідації показані без надійного поділу на напрямок. Модель — евристичний фільтр, не навчений прогноз і не гарантія руху ціни. Для роботи потрібен інтернет. Додай сторінку на головний екран через меню браузера → «Додати на головний екран».</div>
+<div id="hint">Дані: Gate.io USDT Futures. Автооновлення кожні 60 с; публічні ліквідації через WebSocket, якщо з'єднання доступне. Деякі метрики Gate.io відрізняються від Binance, тому окремі фактори є наближеннями. Надходження монет на біржі та рухи команд/китів потребують окремого ончейн-провайдера і не враховані. Ліквідації показані без надійного поділу на напрямок. Модель — евристичний фільтр, не навчений прогноз і не гарантія руху ціни. Для роботи потрібен інтернет. Додай сторінку на головний екран через меню браузера → «Додати на головний екран».</div>
 <script>
 const BASE='https://api.gateio.ws/api/v4';
 const WS_URL='wss://fx-ws.gateio.ws/v4/ws/usdt';
@@ -116,10 +118,14 @@ async function load(){
  const L=statsLiq();
  const shortFunding=clamp(50-fr/0.001*50);
  const shortRatios=[lsrA,lsrTop].filter(v=>Number.isFinite(v)&&v>0);
- const shortCrowding=shortRatios.length?clamp((1.5-shortRatios.reduce((a,b)=>a+b,0)/shortRatios.length)*100):50;
+ const avgLongShort=shortRatios.length?shortRatios.reduce((a,b)=>a+b,0)/shortRatios.length:null;
+ const shortCrowding=avgLongShort===null?50:clamp((1.5-avgLongShort)*100);
+ const longFunding=clamp(50+fr/0.001*50);
+ const longCrowding=avgLongShort===null?50:clamp((avgLongShort-0.5)*100);
  const oiBuild=oi24===null?50:lin(oi24,-0.10,0.20);
  const liqActivity=clamp(L.tot/1000000*100);
  const shortSqueeze= Math.round(0.20*shortFunding+0.20*shortCrowding+0.20*oiBuild+0.25*F3+0.15*liqActivity);
+ const longSqueeze=Math.round(0.24*longFunding+0.24*longCrowding+0.20*oiBuild+0.20*lin(-px24,0,0.15)+0.12*liqActivity);
  const recentHigh=Math.max(...hi.slice(-16));
  const recentLow=Math.min(...lo.slice(-96));
  const priceRank=recentHigh>recentLow?clamp((price-recentLow)/(recentHigh-recentLow)*100):50;
@@ -130,18 +136,20 @@ async function load(){
  const obvDivergence=priceRank>=75&&F6<70?100:0;
  const pump=Math.round(0.15*(100-F1)+0.20*F2+0.15*F3+0.15*(100-F4)+0.20*F5+0.10*F6+0.05*F7);
  const sq=shortSqueeze;
- const entryScore=Math.round(0.20*shortSqueeze+0.20*lin(px24,0.03,0.20)+0.20*oiUnwind+0.25*reversalScore+0.10*obvDivergence+0.05*liqActivity);
- const entryReady=shortSqueeze>=55&&px24>=0.03&&pullback>=0.004&&reversal&&oi24!==null&&oi24<=0.02;
+ const entryScore=Math.round(0.25*longSqueeze+0.15*priceRank+0.20*oiUnwind+0.25*reversalScore+0.10*(100-F6)+0.05*liqActivity);
+ const entryReady=longSqueeze>=55&&priceRank>=50&&pullback>=0.004&&reversal&&oi24!==null&&oi24<=0.02;
  $('px').textContent=fmt(price);const cg=$('chg');cg.textContent=pct(px24);cg.className=px24>=0?'up':'dn';
  $('upd').textContent='оновлено '+new Date().toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
  $('arcP').style.strokeDashoffset=245*(1-pump/100);$('arcP').style.stroke=pump>=60?'var(--green)':pump>=40?'#3ba37c':'#5d6b82';
  $('arcS').style.strokeDashoffset=245*(1-sq/100);$('arcS').style.stroke=sq>=60?'var(--red)':sq>=40?'#c05a6a':'#5d6b82';
  $('valP').textContent=pump;$('valS').textContent=sq;$('subP').textContent='скор '+pump+'/100';$('subS').textContent='скор '+sq+'/100';
  const shortEntry=$('shortEntry');
- if(entryReady&&entryScore>=60){shortEntry.textContent='Можливий вхід після підтвердження · '+entryScore+'/100';shortEntry.className='val dn'}
- else if(shortSqueeze>=65){shortEntry.textContent='Сквіз може тривати — шорт небезпечний · '+entryScore+'/100';shortEntry.className='val dn'}
+ if(entryReady&&entryScore>=60){shortEntry.textContent='Можливий шорт після підтвердження · '+entryScore+'/100';shortEntry.className='val dn'}
+ else if(longSqueeze>=65){shortEntry.textContent='Лонг-сквіз активний — не наздоганяй рух, чекай підтвердження · '+entryScore+'/100';shortEntry.className='val dn'}
  else if(entryScore>=45){shortEntry.textContent='Спостерігай: чекай пробою підтримки · '+entryScore+'/100';shortEntry.className='val'}
  else{shortEntry.textContent='Сигналу на шорт немає · '+entryScore+'/100';shortEntry.className='val'}
+ $('mLongSqueeze').textContent=longSqueeze+'/100';
+ $('mLongSqueeze').className=longSqueeze>=60?'val dn':'val';
  const ph=$('phase');
  if(sq>=60){ph.innerHTML='<b style="color:var(--red)">Стадія сквізу.</b> Можливий рух через ліквідації. Не входь у шорт без підтвердження.';ph.style.borderColor='rgba(246,70,93,.45)'}
  else if(pump>=60&&sq<40){ph.innerHTML='<b style="color:var(--green)">Стадія розкручування.</b> Шорти — паливо. Перевір ретест пробою та обсяг перед входом.';ph.style.borderColor='rgba(14,203,129,.45)'}
