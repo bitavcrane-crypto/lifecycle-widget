@@ -15,15 +15,16 @@ header{display:flex;align-items:center;gap:7px;margin-bottom:10px}
 header select{min-width:0;flex:1;font-weight:700}
 h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
 .muted,.small{color:var(--muted)}.small{font-size:.74rem}.quiet{color:var(--quiet)}
-#manage{display:grid;grid-template-columns:minmax(0,1fr) repeat(6,auto);gap:6px;margin:8px 0}
+#manage{display:grid;grid-template-columns:minmax(0,1fr) repeat(7,auto);gap:5px;margin:8px 0}
 #manage input{min-width:0;text-transform:uppercase}
+#manage button{padding:8px 9px}
 #pairList{display:flex;gap:6px;overflow:auto;padding-bottom:8px}
 .chip{white-space:nowrap;padding:5px 8px;font-size:.75rem}.chip.active{border-color:var(--blue)}
 #priceRow{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:9px 0}
 #price{font-size:1.65rem;font-weight:750;font-variant-numeric:tabular-nums}
 #updated{margin-left:auto;font-size:.7rem;color:var(--quiet)}
 .up{color:var(--green)}.down{color:var(--red)}.warn{color:var(--yellow)}
-.scores{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.scores{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
 .score{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px}
 .score strong{font-size:1.8rem;line-height:1.1}.score label{display:block;color:var(--muted);font-size:.7rem}
 .bar{height:6px;background:#232c3d;border-radius:5px;margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;background:var(--red);border-radius:5px}
@@ -58,31 +59,38 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
   <button id="favorite" aria-label="Обране">☆</button>
   <button id="moveUp" aria-label="Перемістити вгору">↑</button>
   <button id="moveDown" aria-label="Перемістити вниз">↓</button>
+  <button id="togglePair" aria-label="Увімкнути або вимкнути пару">⏸</button>
   <button id="remove" aria-label="Видалити пару">−</button>
+  <button id="resetPairs" aria-label="Скинути пари">↺</button>
 </div>
 <div id="pairList" aria-label="Мої пари"></div>
 <div id="priceRow"><span id="price">—</span><span id="change" class="small"></span><span id="updated">Очікування даних…</span></div>
 <section class="scores">
-  <div class="score"><label>SHORT SETUP</label><strong id="setupScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="setupBar"></i></div></div>
+  <div class="score"><label>SQUEEZE SCORE</label><strong id="squeezeScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="squeezeBar"></i></div></div>
+  <div class="score"><label>BEARISH CONFIRMATION</label><strong id="bearScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="bearBar"></i></div></div>
+  <div class="score"><label>SHORT SCORE</label><strong id="setupScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="setupBar"></i></div></div>
   <div class="score"><label>ENTRY QUALITY</label><strong id="entryScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="entryBar"></i></div></div>
 </section>
 <div id="phase">Завантаження підтверджених свічок…</div>
+<div class="small" id="confidence">CONFIDENCE: —</div>
 <div class="panel"><b>MTF CONSENSUS</b><div id="mtf"><span class="small">Дані завантажуються</span></div></div>
 <section id="metrics">
-  <div class="metric"><div class="label">FUNDING · 8 год</div><div class="value" id="funding">—</div></div>
-  <div class="metric"><div class="label">OPEN INTEREST · ≈24 год</div><div class="value" id="oi">—</div></div>
-  <div class="metric"><div class="label">LONG / SHORT · акаунти</div><div class="value" id="ratio">—</div></div>
-  <div class="metric"><div class="label">ЛІКВІДАЦІЇ · 15 хв (напрямок н/д)</div><div class="value" id="liquidations">—</div></div>
-  <div class="metric"><div class="label">VOLUME · останні 2 год / попер. 2 год</div><div class="value" id="volume">—</div></div>
-  <div class="metric"><div class="label">OBV · 1H</div><div class="value" id="obv">—</div></div>
-  <div class="metric"><div class="label">MACD · 4H</div><div class="value" id="macd">—</div></div>
+  <div class="metric"><div class="label">FUNDING · поточний / trend / percentile</div><div class="value" id="funding">—</div></div>
+  <div class="metric"><div class="label">OI MOMENTUM · 15m / 30m / 1H / 4H / 24H</div><div class="value" id="oi">—</div></div>
+  <div class="metric"><div class="label">LONG / SHORT · зміна 1H / 4H / 24H</div><div class="value" id="ratio">—</div></div>
+  <div class="metric"><div class="label">LIQUIDATION ACTIVITY · 15m</div><div class="value" id="liquidations">—</div></div>
+  <div class="metric"><div class="label">VOLUME · RVOL / trend</div><div class="value" id="volume">—</div></div>
+  <div class="metric"><div class="label">OBV · trend / slope / divergence</div><div class="value" id="obv">—</div></div>
+  <div class="metric"><div class="label">MACD · 4H line / signal / hist</div><div class="value" id="macd">—</div></div>
   <div class="metric"><div class="label">PRICE STRUCTURE · 4H</div><div class="value" id="structure">—</div></div>
-  <div class="metric"><div class="label">BTC CONTEXT · 4H</div><div class="value" id="btc">—</div></div>
-  <div class="metric"><div class="label">КИТИ / TEAM / UNLOCK</div><div class="value warn">Н/Д · провайдер не підключено</div></div>
+  <div class="metric"><div class="label">BTC MARKET · 1H / 4H</div><div class="value" id="btc">—</div></div>
+  <div class="metric"><div class="label">WHALE FLOW</div><div class="value warn" id="whale">UNKNOWN · on-chain provider unavailable</div></div>
+  <div class="metric"><div class="label">TEAM / PROJECT FLOW</div><div class="value warn" id="team">UNKNOWN · source unavailable</div></div>
+  <div class="metric"><div class="label">TOKEN UNLOCK RISK</div><div class="value warn" id="unlock">UNKNOWN · unlock provider unavailable</div></div>
   <div class="metric"><div class="label">DATA COVERAGE / RISK</div><div class="value" id="quality">—</div></div>
 </section>
 <div class="panel"><b id="levelsTitle">SHORT ENTRY ZONE · ATR / swing</b><div id="levels"><div class="small">Очікування даних…</div></div></div>
-<div class="panel"><b>ЧОМУ ТАКИЙ СТАТУС?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul></div>
+<div class="panel"><b>WHY?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul><b>AGAINST SHORT</b><ul id="against"><li>Дані перевіряються…</li></ul><b>DECISION</b><div id="decision">WAIT</div></div>
 <div id="error" role="alert"></div>
 <div id="hint">Джерело ринкових даних: Gate.io public Futures API. Розрахунки використовують лише закриті свічки; оновлення щохвилини. Публічний потік ліквідацій не дає надійно визначити напрямок позиції — він не позначається як long liquidation. OI/Long-Short доступні лише якщо їх повертає Gate.io. Ончейн-потік, команда, unlocks, BTC dominance, кореляція та backend-проксі не підключені. Немає даних — немає підтвердження. Це аналітика, не фінансова порада; оцініть ризик самостійно.</div>
 <script>
