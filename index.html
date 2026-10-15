@@ -243,7 +243,7 @@ function evaluateSignal(input){
  const shortScore=Math.round(squeeze.score*.35+bearish.score*.40+entry.score*.25);
  const dataCoverage=Number.isFinite(coverage)?coverage:Math.round((squeeze.coverage+bearish.coverage+entry.coverage)/3);
  const setup=shortScore>=60&&squeeze.score>=55&&bearish.score>=50;
- const probableSqueeze=priceChange<0&&oi1h!==null&&oi1h<0&&funding!==null&&funding>0&&ratio!==null&&ratio>=1.3&&liqs.spike&&volumeRatio>=1.3;
+ const probableSqueeze=priceChange<0&&oi1h!==null&&oi1h<0&&funding!==null&&funding>0&&ratio!==null&&ratio>=1.3&&liqs.available&&liqs.spike&&volumeRatio>=1.3;
  const invalidated=!!previouslyInvalidated&&!setup||!!hadSetup&&price>bars4.high+bars4.atr*.25&&oi1h!==null&&oi1h>0&&!bars4.macdBear;
  const entryReady=setup&&probableSqueeze&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60;
  const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup&&(late||rr<1.5||entry.score<70||probableSqueeze&&bearish.score>=70)?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
