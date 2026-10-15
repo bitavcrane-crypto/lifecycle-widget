@@ -2,172 +2,459 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0e14">
-<title>Lifecycle Widget — Gate.io Futures</title>
+<title>Short Squeeze Radar — Gate.io Futures</title>
 <style>
-:root{--bg:#0b0e14;--card:#141a26;--line:#232c3d;--tx:#e8edf5;--tx2:#9aa7bd;--tx3:#5d6b82;--red:#f6465d;--green:#0ecb81;--yellow:#f0b90b;--blue:#4f9cf9}
+:root{color-scheme:dark;--bg:#0b0e14;--card:#141a26;--line:#232c3d;--tx:#e8edf5;--muted:#9aa7bd;--quiet:#718099;--red:#f6465d;--green:#0ecb81;--yellow:#f0b90b;--blue:#4f9cf9}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:480px;margin:0 auto;padding:14px 14px 40px}
-#top{display:flex;gap:7px;align-items:center;margin-bottom:10px}
-select{min-width:0;flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;color:var(--tx);padding:10px;font-size:1rem;font-weight:600}
-button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
-#pxrow{display:flex;align-items:baseline;gap:9px;margin-bottom:8px;flex-wrap:wrap}
-#px{font-size:1.7rem;font-weight:700;font-variant-numeric:tabular-nums}
-#chg{font-size:.95rem;font-variant-numeric:tabular-nums}
-#upd{margin-left:auto;font-size:.68rem;color:var(--tx3)}
-#gauges{display:flex;gap:10px;margin:8px 0}
-.g{min-width:0;flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 8px 8px;text-align:center}
-.g svg{width:100%}.g .gl{font-size:.68rem;color:var(--tx3)}.g .gs{font-size:.62rem;color:var(--tx3);margin-top:2px}
-#phase{margin:6px 0 10px;padding:11px 13px;border-radius:12px;font-size:.86rem;line-height:1.45;border:1px solid var(--line);background:var(--card)}
-#grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.m{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 11px;min-width:0}
-.m .k{font-size:.66rem;color:var(--tx3)}.m .val{font-size:.92rem;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;overflow-wrap:anywhere}
-.up{color:var(--green)} .dn{color:var(--red)}
-#mShortEntry{grid-column:1/-1}
-#hint{margin-top:14px;font-size:.7rem;color:var(--tx3);line-height:1.5}
-#err{display:none;margin-top:12px;padding:10px;border-radius:10px;border:1px solid rgba(246,70,93,.4);color:var(--red);font-size:.8rem;line-height:1.4}
+body{max-width:560px;margin:auto;padding:14px 14px 36px;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input,select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px}
+button{cursor:pointer}button:disabled{opacity:.45}
+header{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+header select{min-width:0;flex:1;font-weight:700}
+h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
+.muted,.small{color:var(--muted)}.small{font-size:.74rem}.quiet{color:var(--quiet)}
+#manage{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:8px 0}
+#manage input{grid-column:1/-1;min-width:0;text-transform:uppercase}
+#manage button{padding:8px 4px}
+#pairList{display:flex;gap:6px;overflow:auto;padding-bottom:8px}
+.chip{white-space:nowrap;padding:5px 8px;font-size:.75rem}.chip.active{border-color:var(--blue)}
+#priceRow{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:9px 0}
+#price{font-size:1.65rem;font-weight:750;font-variant-numeric:tabular-nums}
+#updated{margin-left:auto;font-size:.7rem;color:var(--quiet)}
+.up{color:var(--green)}.down{color:var(--red)}.warn{color:var(--yellow)}
+.scores{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+.score{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px}
+.score strong{font-size:1.8rem;line-height:1.1}.score label{display:block;color:var(--muted);font-size:.7rem}
+.bar{height:6px;background:#232c3d;border-radius:5px;margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;background:var(--red);border-radius:5px}
+#phase,.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px;margin:8px 0}
+#phase{font-weight:600}
+#metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.metric{min-width:0;padding:9px 10px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.metric .label{font-size:.65rem;color:var(--quiet)}.metric .value{font-weight:650;overflow-wrap:anywhere;margin-top:2px}
+#mtf{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.tf{padding:4px 7px;border:1px solid var(--line);border-radius:7px;font-size:.73rem}
+#levels{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}
+.level{padding:7px;background:#0e1420;border-radius:7px}.level b{display:block;font-size:.65rem;color:var(--muted)}
+#reasons{padding-left:18px;margin-top:5px;color:var(--muted);font-size:.8rem}
+#coverageList{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.check{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:.68rem;color:var(--muted)}
+.check.ok{color:var(--green)}.check.missing{color:var(--yellow)}
+#error{display:none;color:var(--red);padding:10px;border:1px solid #713543;border-radius:9px;margin-top:8px}
+#apiNotice{display:none;color:var(--yellow);padding:8px;border:1px solid #66531d;border-radius:9px;margin-top:8px;font-size:.74rem}
+#hint{font-size:.69rem;color:var(--quiet);line-height:1.55;margin-top:12px}
+@media(max-width:360px){body{padding:10px}.scores{grid-template-columns:1fr 1fr}.score{padding:9px}.score strong{font-size:1.5rem}}
 </style>
 </head>
 <body>
-<div id="top"><button id="prev" aria-label="Попередня монета">‹</button><select id="pair" aria-label="Ф'ючерсний контракт"></select><button id="next" aria-label="Наступна монета">›</button><button id="ref" aria-label="Оновити">⟳</button></div>
-<div id="pxrow"><span id="px">—</span><span id="chg"></span><span id="upd">підключення…</span></div>
-<div id="gauges">
-<div class="g"><svg viewBox="0 0 200 118"><path d="M 22 106 A 78 78 0 0 1 178 106" fill="none" stroke="#1b2333" stroke-width="11" stroke-linecap="round"/><path id="arcP" d="M 22 106 A 78 78 0 0 1 178 106" fill="none" stroke="#5d6b82" stroke-width="11" stroke-dasharray="245" stroke-dashoffset="245" stroke-linecap="round"/><text id="valP" x="100" y="84" text-anchor="middle" font-size="32" font-weight="700" fill="#e8edf5">0</text></svg><div class="gl">РОЗКРУЧУВАННЯ · лонг</div><div class="gs" id="subP">скор 0/100</div></div>
-<div class="g"><svg viewBox="0 0 200 118"><path d="M 22 106 A 78 78 0 0 1 178 106" fill="none" stroke="#1b2333" stroke-width="11" stroke-linecap="round"/><path id="arcS" d="M 22 106 A 78 78 0 0 1 178 106" fill="none" stroke="#5d6b82" stroke-width="11" stroke-dasharray="245" stroke-dashoffset="245" stroke-linecap="round"/><text id="valS" x="100" y="84" text-anchor="middle" font-size="32" font-weight="700" fill="#e8edf5">0</text></svg><div class="gl">СКВІЗ · шорт</div><div class="gs" id="subS">скор 0/100</div></div>
+<h1>SHORT SQUEEZE RADAR</h1>
+<div class="small">Gate.io USDT perpetuals · decision support, not trade execution</div>
+<header>
+  <button id="prev" aria-label="Попередня пара">‹</button>
+  <select id="pair" aria-label="Контракт"></select>
+  <button id="next" aria-label="Наступна пара">›</button>
+  <button id="refresh" aria-label="Оновити">⟳</button>
+</header>
+<div id="manage">
+  <input id="pairInput" list="contracts" maxlength="24" placeholder="Додати, напр. SOL_USDT" aria-label="Пошук контракту Gate.io">
+  <datalist id="contracts"></datalist>
+  <button id="add" aria-label="Додати пару">+</button>
+  <button id="favorite" aria-label="Обране">☆</button>
+  <button id="moveUp" aria-label="Перемістити вгору">↑</button>
+  <button id="moveDown" aria-label="Перемістити вниз">↓</button>
+  <button id="togglePair" aria-label="Увімкнути або вимкнути пару">⏸</button>
+  <button id="remove" aria-label="Видалити пару">−</button>
+  <button id="resetPairs" aria-label="Скинути пари">↺</button>
 </div>
-<div id="phase">Завантаження даних Gate.io…</div>
-<div id="grid">
-<div class="m"><div class="k">Funding (8год)</div><div class="val" id="mFr">—</div></div>
-<div class="m"><div class="k">OI зміна 24г</div><div class="val" id="mOi">—</div></div>
-<div class="m"><div class="k">Long/Short · акаунти / топ</div><div class="val" id="mLs">—</div></div>
-<div class="m"><div class="k">Taker sell/buy</div><div class="val" id="mTk">—</div></div>
-<div class="m"><div class="k">OBV позиція</div><div class="val" id="mObv">—</div></div>
-<div class="m"><div class="k">MACD 15м</div><div class="val" id="mMacd">—</div></div>
-<div class="m"><div class="k">Ліквідації за 15хв</div><div class="val" id="mLiq">—</div></div>
-<div class="m"><div class="k">Ризик лонг-сквізу</div><div class="val" id="mLongSqueeze">—</div></div>
-<div class="m"><div class="k">Надходження на біржі · кити/команди</div><div class="val" id="mFlow">н/д · потрібне джерело</div></div>
-<div class="m"><div class="k">Ціль (магніт)</div><div class="val" id="mTgt">—</div></div>
-<div class="m" id="mShortEntry"><div class="k">Шорт після лонг-сквізу · евристична оцінка</div><div class="val" id="shortEntry">Очікування даних…</div></div>
-</div>
-<div id="err"></div>
-<div id="hint">Дані: Gate.io USDT Futures. Автооновлення кожні 60 с; публічні ліквідації через WebSocket, якщо з'єднання доступне. Деякі метрики Gate.io відрізняються від Binance, тому окремі фактори є наближеннями. Надходження монет на біржі та рухи команд/китів потребують окремого ончейн-провайдера і не враховані. Ліквідації показані без надійного поділу на напрямок. Модель — евристичний фільтр, не навчений прогноз і не гарантія руху ціни. Для роботи потрібен інтернет. Додай сторінку на головний екран через меню браузера → «Додати на головний екран».</div>
+<div id="pairList" aria-label="Мої пари"></div>
+<div id="priceRow"><span id="price">—</span><span id="change" class="small"></span><span id="updated">Очікування даних…</span></div>
+<section class="scores">
+  <div class="score"><label>SQUEEZE SCORE</label><strong id="squeezeScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="squeezeBar"></i></div></div>
+  <div class="score"><label>BEARISH CONFIRMATION</label><strong id="bearScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="bearBar"></i></div></div>
+  <div class="score"><label>SHORT SCORE</label><strong id="setupScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="setupBar"></i></div></div>
+  <div class="score"><label>ENTRY QUALITY</label><strong id="entryScore">—</strong><span class="small"> / 100</span><div class="bar"><i id="entryBar"></i></div></div>
+</section>
+<div id="phase">Завантаження підтверджених свічок…</div>
+<div class="small" id="confidence">CONFIDENCE (data quality, not win probability): —</div>
+<div class="panel"><b>SQUEEZE EVIDENCE</b><div id="squeezeEvidence" class="small">Дані завантажуються…</div></div>
+<div class="panel"><b>MTF CONSENSUS</b><div id="mtf"><span class="small">Дані завантажуються</span></div></div>
+<section id="metrics">
+  <div class="metric"><div class="label">FUNDING · поточний / trend / percentile</div><div class="value" id="funding">—</div></div>
+  <div class="metric"><div class="label">OI MOMENTUM · 15m / 30m / 1H / 4H / 24H</div><div class="value" id="oi">—</div></div>
+  <div class="metric"><div class="label">LONG / SHORT · зміна 1H / 4H / 24H</div><div class="value" id="ratio">—</div></div>
+  <div class="metric"><div class="label">LIQUIDATION ACTIVITY · 15m</div><div class="value" id="liquidations">—</div></div>
+  <div class="metric"><div class="label">VOLUME · RVOL / trend</div><div class="value" id="volume">—</div></div>
+  <div class="metric"><div class="label">OBV · trend / slope / divergence</div><div class="value" id="obv">—</div></div>
+  <div class="metric"><div class="label">MACD · 4H line / signal / hist</div><div class="value" id="macd">—</div></div>
+  <div class="metric"><div class="label">PRICE STRUCTURE · 4H</div><div class="value" id="structure">—</div></div>
+  <div class="metric"><div class="label">BTC MARKET · 1H / 4H</div><div class="value" id="btc">—</div></div>
+  <div class="metric"><div class="label">WHALE FLOW</div><div class="value warn" id="whale">UNKNOWN · on-chain provider unavailable</div></div>
+  <div class="metric"><div class="label">TEAM / PROJECT FLOW</div><div class="value warn" id="team">UNKNOWN · source unavailable</div></div>
+  <div class="metric"><div class="label">TOKEN UNLOCK RISK</div><div class="value warn" id="unlock">UNKNOWN · unlock provider unavailable</div></div>
+  <div class="metric"><div class="label">DATA COVERAGE / RISK</div><div class="value" id="quality">—</div></div>
+</section>
+<div class="panel"><b>DATA QUALITY</b><div id="coverageList"></div></div>
+<div class="panel"><b id="levelsTitle">SHORT ENTRY ZONE · ATR / swing</b><div id="levels"><div class="small">Очікування даних…</div></div></div>
+<div class="panel"><b>WHY?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul><b>AGAINST SHORT</b><ul id="against"><li>Дані перевіряються…</li></ul><b>DECISION</b><div id="decision">WAIT</div></div>
+<div id="error" role="alert"></div>
+<div id="apiNotice" role="status"></div>
+<div id="hint">Gate.io Futures public REST/WebSocket · усі індикатори свічок розраховані тільки на закритих свічках і оновлюються щохвилини. Squeeze/Bearish/Entry engine незалежний від мережевих запитів; переходи сигналу зберігаються локально для майбутнього аналізу, але це не backtest. Confidence — евристика доступності даних, а не ймовірність прибутку; модель не навчена й не backtested. Ліквідації відображають кількість і raw contract size; напрямок UNKNOWN, не називається long liquidation. Необов'язкові OI, funding history та Long/Short можуть бути недоступні на Gate.io — відсутнє не домислюється. Whale, Team/Project wallet, Token Unlock дані та їх провайдери ще не підключені. Scanner, Telegram, backend та backtesting — майбутня робота. Аналітичний інструмент, не торгова рекомендація.</div>
 <script>
-const BASE='https://api.gateio.ws/api/v4';
-const WS_URL='wss://fx-ws.gateio.ws/v4/ws/usdt';
-const PAIRS=['BTC_USDT','ETH_USDT','SOL_USDT','BNB_USDT','XRP_USDT','DOGE_USDT','ADA_USDT','AVAX_USDT','LINK_USDT','TON_USDT','WIF_USDT','PEPE_USDT','ARB_USDT','INJ_USDT','SUI_USDT','APT_USDT','NEAR_USDT','WLD_USDT','ORDI_USDT','TIA_USDT','FET_USDT','AAVE_USDT','UNI_USDT','JUP_USDT','SEI_USDT'];
-let sym=localStorage.getItem('lw_gate_pair')||'BTC_USDT', LIQ={}, ws, busy=false;
-const $=id=>document.getElementById(id);
-const clamp=(x,a=0,b=100)=>Math.max(a,Math.min(b,x));
-const lin=(x,x0,x1)=>clamp((x-x0)/(x1-x0)*100);
-const numOrNaN=v=>v==null||v===''?NaN:Number(v);
-const fmt=p=>{if(!Number.isFinite(p))return'—';return p>=1000?p.toLocaleString('en-US',{maximumFractionDigits:2}):p>=10?p.toFixed(3):p>=0.1?p.toFixed(4):p.toFixed(7)};
-const pct=n=>(n>=0?'+':'')+(n*100).toFixed(2)+'%';
-const sel=$('pair');
-PAIRS.forEach(p=>{let o=document.createElement('option');o.value=p;o.textContent=p.replace('_USDT','');sel.appendChild(o)});
-if(!PAIRS.includes(sym))sym='BTC_USDT';sel.value=sym;
-function choose(s){sym=s;sel.value=s;localStorage.setItem('lw_gate_pair',sym);load()}
-sel.onchange=()=>choose(sel.value);
-$('prev').onclick=()=>choose(PAIRS[(PAIRS.indexOf(sym)-1+PAIRS.length)%PAIRS.length]);
-$('next').onclick=()=>choose(PAIRS[(PAIRS.indexOf(sym)+1)%PAIRS.length]);
-$('ref').onclick=load;
-async function j(path){const r=await fetch(BASE+path,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status+' — '+path.split('?')[0]);return r.json()}
-function ema(a,p){const k=2/(p+1);let out=[],e;for(let i=0;i<a.length;i++){e=i?a[i]*k+e*(1-k):a[i];out.push(e)}return out}
-function statsLiq(){const cut=Date.now()-900000,ev=(LIQ[sym]||[]).filter(x=>x.t>=cut);return ev.reduce((a,e)=>({tot:a.tot+e.usd,big:Math.max(a.big,e.usd)}),{tot:0,big:0})}
-function connectWS(){
- try{ws=new WebSocket(WS_URL)}catch(e){setTimeout(connectWS,5000);return}
- ws.onopen=()=>{try{ws.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}))}catch(e){}};
- ws.onmessage=ev=>{try{const msg=JSON.parse(ev.data);if(msg.channel!=='futures.public_liquidates'||msg.event!=='update')return;const rows=Array.isArray(msg.result)?msg.result:[msg.result];rows.forEach(x=>{if(!x||!x.contract||!x.price)return;const size=Math.abs(Number(x.size)||0),usd=size*Number(x.price);(LIQ[x.contract]=LIQ[x.contract]||[]).push({t:Number(x.time_ms)||Date.now(),usd});LIQ[x.contract]=LIQ[x.contract].filter(a=>a.t>Date.now()-3600000).slice(-500)})}catch(e){}};
- ws.onclose=()=>setTimeout(connectWS,5000);ws.onerror=()=>{try{ws.close()}catch(e){}};
+'use strict';
+const API='https://api.gateio.ws/api/v4';
+const WS='wss://fx-ws.gateio.ws/v4/ws/usdt';
+const DEFAULT_PAIRS=['BTC_USDT','ETH_USDT','SOL_USDT','BNB_USDT','XRP_USDT','DOGE_USDT','ADA_USDT','AVAX_USDT','LINK_USDT','TON_USDT','WIF_USDT','PEPE_USDT','ARB_USDT','INJ_USDT','SUI_USDT','APT_USDT','NEAR_USDT','WLD_USDT','ORDI_USDT','TIA_USDT','FET_USDT','AAVE_USDT','UNI_USDT','JUP_USDT','SEI_USDT'];
+const PERIODS={'15m':900,'30m':1800,'1h':3600,'4h':14400,'1d':86400};
+const $=id=>document.getElementById(id), clamp=(v,a=0,b=100)=>Math.max(a,Math.min(b,v));
+const fmt=v=>Number.isFinite(v)?(v>=1000?v.toLocaleString('en-US',{maximumFractionDigits:2}):v>=10?v.toFixed(3):v>=.1?v.toFixed(4):v.toFixed(7)):'—';
+const pct=v=>Number.isFinite(v)?`${v>=0?'+':''}${(v*100).toFixed(2)}%`:'н/д';
+const cleanPair=s=>String(s||'').trim().toUpperCase().replace('/','_');
+function readList(){
+ try{const saved=JSON.parse(localStorage.getItem('lw_pairs')||'null');if(Array.isArray(saved)){const valid=saved.map(x=>typeof x==='string'?{name:x,fav:false,enabled:true}:{...x,enabled:x.enabled!==false,fav:!!x.fav}).filter(x=>x&&/^[A-Z0-9]+_USDT$/.test(x.name)).slice(0,50);if(valid.length){if(!valid.some(p=>p.enabled))valid[0].enabled=true;return valid}}}catch(_){}
+ return DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));
 }
-function candleFields(c){if(Array.isArray(c)){return {t:+c[0],v:+c[1],c:+c[2],h:+c[3],l:+c[4],o:+c[5]}}return {t:+c.t,v:+c.v,c:+c.c,h:+c.h,l:+c.l,o:+c.o}}
-async function load(){
- if(busy)return;busy=true;$('err').style.display='none';
+let pairs=readList(), active=localStorage.getItem('lw_gate_pair')||pairs[0].name, liquidations={}, requests=new Set(), socket=null, wsPingTimer=null, reconnectTimer=null, refreshTimer=null, freshnessTimer=null, busy=false, reloadPending=false, liqLive=false, stopped=false, lastSuccessAt=0, lastWsMessageAt=0, knownPairs=new Set(DEFAULT_PAIRS);
+if(!pairs.some(p=>p.name===active&&p.enabled))active=(pairs.find(p=>p.enabled)||pairs[0]).name;
+function savePairs(){localStorage.setItem('lw_pairs',JSON.stringify(pairs));localStorage.setItem('lw_gate_pair',active)}
+function renderPairs(){
+ const select=$('pair');select.replaceChildren();
+ pairs.filter(p=>p.enabled).forEach(p=>{const o=document.createElement('option');o.value=p.name;o.textContent=(p.fav?'★ ':'')+p.name;select.append(o)});
+ select.value=active;
+ const list=$('pairList');list.replaceChildren();
+ pairs.forEach(p=>{const b=document.createElement('button');b.className='chip'+(p.name===active?' active':'');b.textContent=(p.enabled?'':'⏸ ')+(p.fav?'★ ':'')+p.name.replace('_USDT','');b.title=p.enabled?'Натисніть, щоб відкрити':'Натисніть, щоб увімкнути';b.onclick=()=>{if(!p.enabled){p.enabled=true;active=p.name;savePairs();renderPairs();load()}else choose(p.name)};list.append(b)});
+ $('remove').disabled=pairs.length<=1;$('togglePair').textContent=pairs.find(p=>p.name===active)?.enabled?'⏸':'▶';
+ $('togglePair').title=pairs.find(p=>p.name===active)?.enabled?'Disable pair':'Enable pair';$('resetPairs').title='Reset pairs to defaults';
+ $('togglePair').disabled=pairs.filter(p=>p.enabled).length<=1&&pairs.find(p=>p.name===active)?.enabled;
+ $('favorite').textContent=pairs.find(p=>p.name===active)?.fav?'★':'☆';
+}
+function choose(name){if(!pairs.some(p=>p.name===name&&p.enabled))return;active=name;savePairs();renderPairs();load()}
+function movePair(delta){const i=pairs.findIndex(p=>p.name===active),j=i+delta;if(j<0||j>=pairs.length)return;[pairs[i],pairs[j]]=[pairs[j],pairs[i]];savePairs();renderPairs()}
+function renderAllPairs(){
+ const d=$('contracts');d.replaceChildren();
+ [...knownPairs].sort().forEach(name=>{const o=document.createElement('option');o.value=name;d.append(o)});
+}
+async function request(path){
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+ requests.add(controller);
  try{
- const [rawK,ticks,contract,stats]=await Promise.all([
- j(`/futures/usdt/candlesticks?contract=${sym}&interval=15m&limit=200`),
- j(`/futures/usdt/tickers?contract=${sym}`),
- j(`/futures/usdt/contracts/${sym}`),
- j(`/futures/usdt/contract_stats?contract=${sym}&interval=1h&limit=25`)
- ]);
- const kl=rawK.map(candleFields).filter(c=>[c.t,c.v,c.c,c.h,c.l,c.o].every(Number.isFinite)).sort((a,b)=>a.t-b.t);
- if(kl.length<100)throw new Error('Gate.io повернув недостатньо свічок для розрахунку');
- const tick=Array.isArray(ticks)?ticks[0]:ticks;
- const price=Number(tick.last)||kl[kl.length-1].c,prev=Number(tick.change_percentage);
- const px24=Number.isFinite(prev)?prev/100:(price/kl[Math.max(0,kl.length-97)].c-1);
- const fr=Number(contract.funding_rate ?? tick.funding_rate ?? 0);
- const st=Array.isArray(stats)?stats.sort((a,b)=>Number(a.time)-Number(b.time)):[];
- const latest=st[st.length-1]||{},old=st[0]||{};
- const oiNow=Number(latest.open_interest_usd ?? latest.open_interest),oiOld=Number(old.open_interest_usd ?? old.open_interest);
- const oi24=oiNow>0&&oiOld>0?oiNow/oiOld-1:null;
- const lsrA=numOrNaN(latest.lsr_account),lsrTop=numOrNaN(latest.top_lsr_account),lsrTaker=numOrNaN(latest.lsr_taker);
- const cl=kl.map(c=>c.c),vol=kl.map(c=>c.v),hi=kl.map(c=>c.h),lo=kl.map(c=>c.l);
- let ob=0;const obv=kl.map((c,i)=>{if(i)ob+=(c.c>kl[i-1].c?1:c.c<kl[i-1].c?-1:0)*c.v;return ob});
- const f=ema(cl,12),slow=ema(cl,26),line=cl.map((_,i)=>f[i]-slow[i]),sig=ema(line,9),hist=line.map((v,i)=>v-sig[i]);
- const oMin=Math.min(...obv.slice(-96)),oMax=Math.max(...obv.slice(-96));
- const F1=clamp(50+fr/0.001*50);
- const F2=oi24===null?50:lin(oi24,-0.30,0.30);
- const F3=lin(px24,-0.20,0.20);
- const F4=Number.isFinite(lsrA)?lin(lsrA,0.5,2.5):50;
- const lastVol=vol.slice(-8).reduce((a,b)=>a+b,0),prevVol=vol.slice(-16,-8).reduce((a,b)=>a+b,0);
- // Gate.io не дає прямий taker buy/sell volume в цьому запиті; використовуємо lsr_taker як наближення потоку, якщо він є.
- const F5=Number.isFinite(lsrTaker)&&lsrTaker>0?clamp((lsrTaker-0.5)/2*100):(prevVol>0?clamp(50+(lastVol/prevVol-1)*35):50);
- const F6=oMax>oMin?(obv[obv.length-1]-oMin)/(oMax-oMin)*100:50;
- const avgH=hist.slice(-50).reduce((a,h)=>a+Math.abs(h),0)/50;
- const F7=clamp(50+(hist[hist.length-1]/(avgH||1))*25);
- const L=statsLiq();
- const shortFunding=clamp(50-fr/0.001*50);
- const shortRatios=[lsrA,lsrTop].filter(v=>Number.isFinite(v)&&v>0);
- const avgLongShort=shortRatios.length?shortRatios.reduce((a,b)=>a+b,0)/shortRatios.length:null;
- const shortCrowding=avgLongShort===null?50:clamp((1.5-avgLongShort)*100);
- const longFunding=clamp(50+fr/0.001*50);
- const longCrowding=avgLongShort===null?50:clamp((avgLongShort-0.5)*100);
- const oiBuild=oi24===null?50:lin(oi24,-0.10,0.20);
- const liqActivity=clamp(L.tot/1000000*100);
- const shortSqueeze= Math.round(0.20*shortFunding+0.20*shortCrowding+0.20*oiBuild+0.25*F3+0.15*liqActivity);
- const longSqueeze=Math.round(0.24*longFunding+0.24*longCrowding+0.20*oiBuild+0.20*lin(-px24,0,0.15)+0.12*liqActivity);
- const recentHigh=Math.max(...hi.slice(-16));
- const recentLow=Math.min(...lo.slice(-96));
- const priceRank=recentHigh>recentLow?clamp((price-recentLow)/(recentHigh-recentLow)*100):50;
- const pullback=recentHigh>0?(recentHigh-price)/recentHigh:0;
- const oiUnwind=oi24===null?50:lin(-oi24,0,0.15);
- const reversal=line[line.length-1]<sig[sig.length-1]&&hist[hist.length-1]<hist[hist.length-2];
- const reversalScore=reversal?100:line[line.length-1]<sig[sig.length-1]?60:hist[hist.length-1]<hist[hist.length-2]?35:0;
- const obvDivergence=priceRank>=75&&F6<70?100:0;
- const pump=Math.round(0.15*(100-F1)+0.20*F2+0.15*F3+0.15*(100-F4)+0.20*F5+0.10*F6+0.05*F7);
- const sq=shortSqueeze;
- const entryScore=Math.round(0.25*longSqueeze+0.15*priceRank+0.20*oiUnwind+0.25*reversalScore+0.10*(100-F6)+0.05*liqActivity);
- const entryReady=longSqueeze>=55&&priceRank>=50&&pullback>=0.004&&reversal&&oi24!==null&&oi24<=0.02;
- $('px').textContent=fmt(price);const cg=$('chg');cg.textContent=pct(px24);cg.className=px24>=0?'up':'dn';
- $('upd').textContent='оновлено '+new Date().toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
- $('arcP').style.strokeDashoffset=245*(1-pump/100);$('arcP').style.stroke=pump>=60?'var(--green)':pump>=40?'#3ba37c':'#5d6b82';
- $('arcS').style.strokeDashoffset=245*(1-sq/100);$('arcS').style.stroke=sq>=60?'var(--red)':sq>=40?'#c05a6a':'#5d6b82';
- $('valP').textContent=pump;$('valS').textContent=sq;$('subP').textContent='скор '+pump+'/100';$('subS').textContent='скор '+sq+'/100';
- const shortEntry=$('shortEntry');
- if(entryReady&&entryScore>=60){shortEntry.textContent='Можливий шорт після підтвердження · '+entryScore+'/100';shortEntry.className='val dn'}
- else if(longSqueeze>=65){shortEntry.textContent='Лонг-сквіз активний — не наздоганяй рух, чекай підтвердження · '+entryScore+'/100';shortEntry.className='val dn'}
- else if(entryScore>=45){shortEntry.textContent='Спостерігай: чекай пробою підтримки · '+entryScore+'/100';shortEntry.className='val'}
- else{shortEntry.textContent='Сигналу на шорт немає · '+entryScore+'/100';shortEntry.className='val'}
- $('mLongSqueeze').textContent=longSqueeze+'/100';
- $('mLongSqueeze').className=longSqueeze>=60?'val dn':'val';
- const ph=$('phase');
- if(sq>=60){ph.innerHTML='<b style="color:var(--red)">Стадія сквізу.</b> Можливий рух через ліквідації. Не входь у шорт без підтвердження.';ph.style.borderColor='rgba(246,70,93,.45)'}
- else if(pump>=60&&sq<40){ph.innerHTML='<b style="color:var(--green)">Стадія розкручування.</b> Шорти — паливо. Перевір ретест пробою та обсяг перед входом.';ph.style.borderColor='rgba(14,203,129,.45)'}
- else if(pump>=60){ph.innerHTML='<b style="color:var(--yellow)">Дистрибуція.</b> Імпульс сильний, але ризик сквізу зростає. Не входь лише за скором.';ph.style.borderColor='rgba(240,185,11,.45)'}
- else if(pump>=35){ph.innerHTML='<b style="color:var(--blue)">Набір позицій.</b> Чекай пробою з підтвердженням обсягом та OI.';ph.style.borderColor='rgba(79,156,249,.4)'}
- else{ph.innerHTML='<b>Нейтрально.</b> Сильного сигналу за поточними факторами немає.';ph.style.borderColor='var(--line)'}
- const mFr=$('mFr');mFr.textContent=pct(fr);mFr.className=fr>0.0002?'val dn':fr<-0.0002?'val up':'val';
- $('mOi').textContent=oi24===null?'н/д':pct(oi24);
- $('mLs').textContent=Number.isFinite(lsrA)?lsrA.toFixed(2)+' / '+(Number.isFinite(lsrTop)?lsrTop.toFixed(2):'н/д'):'н/д';
- $('mTk').textContent=Number.isFinite(lsrTaker)?lsrTaker.toFixed(2)+' (L/S)':(prevVol>0?(lastVol/prevVol).toFixed(2)+'× обсяг':'н/д');
- $('mObv').textContent=F6.toFixed(0)+'% діапазону';
- const bear=line[line.length-1]<sig[sig.length-1];$('mMacd').textContent=bear?'ведмежий':'бичачий';$('mMacd').className=bear?'val dn':'val up';
- $('mLiq').textContent=L.tot>0?'$'+(L.tot/1e6).toFixed(2)+'M'+(L.big>=300000?' 💀':''):'—';
- $('mTgt').textContent=fmt(Math.min(...lo.slice(-96)));
- }catch(e){$('err').style.display='block';$('err').textContent='Не вдалося завантажити дані Gate.io: '+e.message+'. Перевір інтернет або спробуй відкрити сторінку в Chrome.'}
- finally{busy=false}
+  const r=await fetch(API+path,{cache:'no-store',signal:controller.signal});
+  if(!r.ok)throw new Error(`Gate.io HTTP ${r.status} — ${path.split('?')[0]}`);
+  return await r.json();
+ }catch(e){
+  if(e.name==='AbortError')throw new Error(`Gate.io request timed out — ${path.split('?')[0]}`);
+  throw e;
+ }finally{clearTimeout(timeout);requests.delete(controller)}
 }
-connectWS();load();setInterval(load,60000);
+function candle(c){
+ const x=Array.isArray(c)?{t:+c[0],v:+c[1],close:+c[2],high:+c[3],low:+c[4],open:+c[5]}:{t:+c.t,v:+c.v,close:+c.c,high:+c.h,low:+c.l,open:+c.o};
+ return x;
+}
+function ema(a,p){const k=2/(p+1),out=[];let e;for(let i=0;i<a.length;i++){e=i?a[i]*k+e*(1-k):a[i];out.push(e)}return out}
+function summarize(raw,tf){
+ const secs=PERIODS[tf],now=Math.floor(Date.now()/1000);
+ const bars=raw.map(candle).filter(c=>[c.t,c.v,c.close,c.high,c.low,c.open].every(Number.isFinite)&&c.t+secs<=now).sort((a,b)=>a.t-b.t);
+ if(bars.length<35)throw new Error(`Недостатньо закритих ${tf} свічок`);
+ const closes=bars.map(c=>c.close),vol=bars.map(c=>c.v),fast=ema(closes,12),slow=ema(closes,26),line=fast.map((v,i)=>v-slow[i]),sig=ema(line,9),hist=line.map((v,i)=>v-sig[i]);
+ let ob=0;const obv=bars.map((c,i)=>{if(i)ob+=(c.close>bars[i-1].close?1:c.close<bars[i-1].close?-1:0)*c.v;return ob});
+ const n=bars.length,recent=bars.slice(-10),prior=bars.slice(-20,-10),swing=bars.slice(-20), hi=Math.max(...swing.map(c=>c.high)),lo=Math.min(...swing.map(c=>c.low));
+ const atrBars=bars.slice(-15);const tr=atrBars.map((c,i)=>{const prev=bars[n-15+i-1];return Math.max(c.high-c.low,prev?Math.abs(c.high-prev.close):0,prev?Math.abs(c.low-prev.close):0)});
+ const atr=tr.reduce((a,b)=>a+b,0)/tr.length, avgVol=bars.slice(-21,-1).reduce((a,c)=>a+c.v,0)/20;
+ const obvDelta=obv[n-1]-obv[Math.max(0,n-6)],obvBear=obvDelta<0,obvSlope=obvDelta/Math.max(1,Math.abs(obv[Math.max(0,n-6)]));
+ const oldPriceHigh=Math.max(...bars.slice(-20,-10).map(c=>c.high)),newPriceHigh=Math.max(...recent.map(c=>c.high));
+ const oldObvHigh=Math.max(...obv.slice(-20,-10)),newObvHigh=Math.max(...obv.slice(-10));
+ const obvDivergence=newPriceHigh>oldPriceHigh&&newObvHigh<oldObvHigh;
+ const macdBear=line[n-1]<sig[n-1]&&hist[n-1]<hist[n-2],histogramTurn=hist[n-1]<0&&hist[n-2]>=0,histogramAcceleration=hist[n-1]<hist[n-2],negativeHistogramAcceleration=hist[n-1]<0&&histogramAcceleration;
+ const support=Math.min(...bars.slice(-21,-1).map(c=>c.low)), broke=bars[n-1].close<support;
+ const referenceBars=bars.slice(-31,-11),recentBars=bars.slice(-10),oldHigh=Math.max(...referenceBars.map(c=>c.high)),recentHigh=Math.max(...recentBars.map(c=>c.high));
+ const priorRejection=referenceBars.some(c=>c.high>=oldHigh-atr*.25&&c.close<c.high-atr*.5),rejection=priorRejection||recentHigh>=oldHigh&&bars[n-1].close<recentHigh-atr*.5,lowerHigh=recentHigh<oldHigh,higherHigh=recentHigh>oldHigh,lowerLow=bars[n-1].low<Math.min(...bars.slice(-11,-1).map(c=>c.low));
+ const bearishCrossover=line[n-1]<sig[n-1]&&line[n-2]>=sig[n-2];
+ const change=closes[n-1]/closes[n-2]-1,change1h=closes[n-1]/closes[Math.max(0,n-1-Math.round(3600/secs))]-1,rv=avgVol?bars[n-1].v/avgVol:NaN;
+ return {tf,bars,price:closes[n-1],change,change1h,hi,lo,atr,rv,obvBear,obvSlope,obvDivergence,macd:line[n-1],signal:sig[n-1],hist:hist[n-1],histogramTurn,histogramAcceleration,negativeHistogramAcceleration,macdBear,bearishCrossover,broke,rejection,lowerHigh,higherHigh,lowerLow,high:Math.max(...swing.map(c=>c.high)),support,priorLow:Math.min(...bars.slice(-60,-20).map(c=>c.low))};
+}
+function liqStats(pair){
+ const now=Date.now(),all=liquidations[pair]||[],recent=all.filter(e=>e.t>now-900000),previous=all.filter(e=>e.t<=now-900000&&e.t>now-1800000);
+ const quantity=recent.reduce((s,x)=>s+x.size,0),previousQuantity=previous.reduce((s,x)=>s+x.size,0);
+ const spike=recent.length>=3&&(previous.length===0||recent.length>=previous.length*2||previousQuantity>0&&quantity>=previousQuantity*2);
+ return {quantity,previousQuantity,count:recent.length,previousCount:previous.length,spike,available:liqLive};
+}
+function validNumber(value){const n=Number(value);return value!==null&&value!==undefined&&value!==''&&Number.isFinite(n)?n:null}
+function statsValue(row,key){return validNumber(row?.[key])}
+function changeOver(rows,key,seconds){
+ if(rows.length<2)return null;
+ const last=rows[rows.length-1],lastValue=statsValue(last,key),target=Number(last.time)-seconds;
+ const prior=[...rows].reverse().find(r=>Number(r.time)<=target),oldValue=statsValue(prior,key);
+ return lastValue!==null&&oldValue!==null&&oldValue>0?lastValue/oldValue-1:null;
+}
+function lifecycleState(pair){
+ try{return JSON.parse(localStorage.getItem('lw_lifecycle_v2')||'{}')[pair]||{active:false,invalidated:false}}catch(_){return {active:false,invalidated:false}}
+}
+function saveLifecycle(pair,result){
+ try{
+  const all=JSON.parse(localStorage.getItem('lw_lifecycle_v2')||'{}'),state=all[pair]||{active:false,invalidated:false};
+  if(result.invalidated){state.active=false;state.invalidated=true}
+  else if(result.setup){state.active=true;state.invalidated=false}
+  all[pair]=state;localStorage.setItem('lw_lifecycle_v2',JSON.stringify(all));
+ }catch(_){}
+}
+function recordSignal(pair,result,levels){
+ try{
+  const history=JSON.parse(localStorage.getItem('lw_signal_history_v2')||'[]'),last=history.filter(x=>x.pair===pair).at(-1);
+  if(last?.signal===result.decision)return;
+  history.push({timestamp:Date.now(),pair,scores:{squeeze:result.squeeze.score,bearish:result.bearish.score,entry:result.entry.score,short:result.shortScore},signal:result.decision,entry:levels.entry,invalidation:levels.invalidation,tp:levels.targets,result:null});
+  localStorage.setItem('lw_signal_history_v2',JSON.stringify(history.slice(-300)));
+ }catch(_){}
+}
+function setMetric(id,text,state=''){
+ const el=$(id);el.textContent=text;el.className='value '+state;
+}
+function weightedScore(parts){
+ const active=parts.filter(p=>Number.isFinite(p.value)),weight=active.reduce((n,p)=>n+p.weight,0);
+ return {score:weight?Math.round(active.reduce((n,p)=>n+p.weight*clamp(p.value)/100,0)/weight*100):0,coverage:Math.round(weight)};
+}
+function evaluateSignal(input){
+ const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated,coverage}=input;
+ const oiScore=(value,threshold)=>value===null?NaN:value<0?priceChange<0?(value<=threshold?100:75):25:value>0?priceChange>0?(ratio!==null&&ratio>=1.3?75:55):priceChange<0?15:35:35;
+ const squeeze=weightedScore([
+  {weight:20,value:ratio===null?NaN:ratio>=2?100:ratio>=1.5?75:ratio>=1.2?45:15},
+  {weight:15,value:Number.isFinite(funding)?funding>=.0008?100:funding>=.0005?80:funding>0?55:10:NaN},
+  {weight:12,value:oiScore(oi1h,-.03)},
+  {weight:8,value:oiScore(oi4h,-.05)},
+  {weight:10,value:Number.isFinite(priceChange)?priceChange<-.025?100:priceChange<0?65:10:NaN},
+  {weight:15,value:liqs.available?liqs.spike?100:liqs.count?45:0:NaN},
+  {weight:20,value:Number.isFinite(volumeRatio)?volumeRatio>=3?100:volumeRatio>=2?80:volumeRatio>=1.3?60:volumeRatio>=1?35:10:NaN}
+ ]);
+ const bearish=weightedScore([
+  {weight:20,value:bars4.broke&&bars4.lowerHigh?100:bars4.broke?85:bars4.rejection&&bars4.lowerHigh?75:bars4.lowerHigh||bars4.lowerLow?55:20},
+  {weight:15,value:bars1.obvDivergence?100:bars1.obvBear?75:25},
+  {weight:15,value:bars4.histogramTurn&&bars4.histogramAcceleration?100:bars4.macdBear&&bars4.histogramAcceleration?85:bars4.macdBear?65:20},
+  {weight:10,value:Number.isFinite(volumeRatio)?volumeRatio>=2&&priceChange<0?100:volumeRatio>=1.3&&priceChange<0?75:volumeRatio<.8?10:35:NaN},
+  {weight:15,value:clamp(tfs.filter(t=>t.change<0).length/5*100)},
+  {weight:10,value:btc4h&&btc1h?(btc4h.change<-.02?100:btc1h.change<-.01?75:btc4h.change<0?55:btc4h.change>.02?0:35):NaN},
+  {weight:15,value:oi1h!==null&&oi1h<0&&priceChange<0?80:oi1h!==null&&oi1h>0&&priceChange<0?45:35}
+ ]);
+ const midpoint=(entryLow+entryHigh)/2,zoneWidth=Math.max(Number.EPSILON,entryHigh-entryLow),locationScore=price>=entryLow&&price<=entryHigh?100:price>entryHigh?clamp(75-(price-entryHigh)/zoneWidth*80):clamp(75-(entryLow-price)/zoneWidth*80);
+ const entry=weightedScore([
+  {weight:30,value:locationScore},
+  {weight:30,value:Number.isFinite(rr)?rr>=2.5?100:rr>=2?85:rr>=1.5?70:rr>=1?40:0:NaN},
+  {weight:25,value:late?0:100},
+  {weight:15,value:bars4.broke?90:bars4.rejection?65:35}
+ ]);
+ const shortScore=Math.round(squeeze.score*.35+bearish.score*.40+entry.score*.25);
+ const dataCoverage=Number.isFinite(coverage)?coverage:Math.round((squeeze.coverage+bearish.coverage+entry.coverage)/3);
+ const setup=shortScore>=60&&squeeze.score>=55&&bearish.score>=50;
+ const probableSqueeze=priceChange<0&&oi1h!==null&&oi1h<0&&funding!==null&&funding>0&&ratio!==null&&ratio>=1.3&&liqs.available&&liqs.spike&&volumeRatio>=1.3;
+ const invalidated=!!previouslyInvalidated&&!setup||!!hadSetup&&price>bars4.high+bars4.atr*.25&&oi1h!==null&&oi1h>0&&!bars4.macdBear;
+ const entryReady=setup&&probableSqueeze&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60;
+ const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup&&(late||rr<1.5||entry.score<70||probableSqueeze&&bearish.score>=70)?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
+ return {squeeze,bearish,entry,shortScore,coverage:dataCoverage,setup,probableSqueeze,entryReady,invalidated,decision,midpoint};
+}
+function renderList(id,items,empty){
+ const ul=$(id);ul.replaceChildren();
+ (items.length?items:[empty]).slice(0,8).forEach(text=>{const li=document.createElement('li');li.textContent=text;ul.append(li)});
+}
+function renderLevels(b4,entryOK,candidate,late,rr){
+ const root=$('levels');root.replaceChildren();
+ $('levelsTitle').textContent=entryOK?'SHORT ENTRY ZONE · підтверджено':'POTENTIAL ZONE · не є входом';
+ const entryLow=b4.high-.25*b4.atr,entryHigh=b4.high+.10*b4.atr,invalid=b4.high+.75*b4.atr;
+ const targets=[b4.support,b4.priorLow,b4.priorLow-4.5*b4.atr].filter(v=>Number.isFinite(v)&&v<entryLow);
+ const vals=[[entryOK?'ENTRY':'Indicative zone',`${fmt(entryLow)} – ${fmt(entryHigh)}`],['INVALIDATION',fmt(invalid)],['TP1',fmt(targets[0])],['TP2',fmt(targets[1])],['TP3',fmt(targets[2])],['R:R · TP1',Number.isFinite(rr)?rr.toFixed(2):'н/д']];
+ if(late){const note=document.createElement('div');note.className='warn small';note.textContent='⚠️ LATE SHORT — рівні орієнтовні, новий SHORT не рекомендується.';root.append(note)}
+ else if(!candidate&&!entryOK){const note=document.createElement('div');note.className='small';note.textContent='Setup не підтверджений; рівні є лише довідковими.';root.append(note)}
+ vals.forEach(([k,v])=>{const d=document.createElement('div');d.className='level';const b=document.createElement('b');b.textContent=k;const s=document.createElement('span');s.textContent=v;d.append(b,s);root.append(d)});
+}
+function paintTF(tfs){
+ const root=$('mtf');root.replaceChildren();
+ tfs.forEach(t=>{const b=document.createElement('span');b.className='tf '+(t.change<0?'down':'up');b.textContent=`${t.tf} ${t.change<0?'▼':'▲'}`;root.append(b)});
+}
+function clearDashboard(){
+ ['price','change','squeezeScore','bearScore','setupScore','entryScore'].forEach(id=>$(id).textContent='—');
+ ['squeezeBar','bearBar','setupBar','entryBar'].forEach(id=>$(id).style.width='0%');
+ $('phase').textContent='DATA UNAVAILABLE · signal evaluation paused';$('confidence').textContent='CONFIDENCE: unavailable';
+ $('squeezeEvidence').textContent='Squeeze evidence unavailable; no signal is generated.';
+ $('decision').textContent='WAIT · DATA UNAVAILABLE';
+ ['funding','oi','ratio','liquidations','volume','obv','macd','structure','btc','quality'].forEach(id=>setMetric(id,'UNAVAILABLE'));
+ $('mtf').textContent='UNAVAILABLE';
+ $('coverageList').textContent='⚠ Required market data unavailable';
+ $('levels').textContent='Entry levels unavailable';$('levelsTitle').textContent='SHORT ENTRY ZONE · unavailable';
+ $('apiNotice').style.display='none';
+ renderList('reasons',[],'No current market data.');
+ renderList('against',['Market data unavailable; previous values cleared.'],'');
+}
+function checkFreshness(){
+ if(!lastSuccessAt)return;
+ const age=Date.now()-lastSuccessAt;
+ if(age>90000){
+  lastSuccessAt=0;clearDashboard();
+  $('updated').textContent=`STALE · last successful update ${Math.floor(age/1000)}s ago`;
+  $('error').style.display='block';$('error').textContent='Market data is stale; previous signal values have been cleared.';
+ }
+ if(liqLive&&Date.now()-lastWsMessageAt>60000){liqLive=false;try{socket?.close()}catch(_){}}
+}
+function stopApplication(){
+ stopped=true;
+ [refreshTimer,freshnessTimer,reconnectTimer,wsPingTimer].forEach(timer=>{if(timer)clearInterval(timer),clearTimeout(timer)});
+ refreshTimer=freshnessTimer=reconnectTimer=wsPingTimer=null;
+ requests.forEach(controller=>controller.abort());requests.clear();
+ const current=socket;socket=null;liqLive=false;
+ if(current){current.onopen=current.onmessage=current.onerror=current.onclose=null;try{current.close()}catch(_){}}
+}
+function startApplication(){
+ stopped=false;
+ if(!refreshTimer)refreshTimer=setInterval(load,60000);
+ if(!freshnessTimer)freshnessTimer=setInterval(checkFreshness,10000);
+ connectWS();load();loadContracts();
+}
+async function load(){
+ if(stopped)return;
+ if(busy){reloadPending=true;return}
+ busy=true;const pair=active,optionalErrors=[];$('error').style.display='none';$('apiNotice').style.display='none';$('updated').textContent='Оновлення…';
+ const optional=(label,path)=>request(path).catch(e=>{optionalErrors.push(`${label}: ${e.message}`);return null});
+ try{
+  const intervals=Object.keys(PERIODS);
+  const responses=await Promise.all([
+   ...intervals.map(tf=>request(`/futures/usdt/candlesticks?contract=${encodeURIComponent(pair)}&interval=${tf}&limit=120`)),
+   optional('Ticker',`/futures/usdt/tickers?contract=${encodeURIComponent(pair)}`),
+   optional('Contract',`/futures/usdt/contracts/${encodeURIComponent(pair)}`),
+   optional('OI / Long-Short','/futures/usdt/contract_stats?contract='+encodeURIComponent(pair)+'&interval=5m&limit=300'),
+   optional('Funding history',`/futures/usdt/funding_rate?contract=${encodeURIComponent(pair)}&limit=100`),
+   pair==='BTC_USDT'?Promise.resolve(null):Promise.all(['1h','4h'].map(tf=>request(`/futures/usdt/candlesticks?contract=BTC_USDT&interval=${tf}&limit=60`))).catch(e=>{optionalErrors.push(`BTC context: ${e.message}`);return null})
+  ]);
+  const candles=responses.slice(0,intervals.length);
+  const [tickRaw,contractRaw,statsRaw,fundingRaw,btcRaw]=responses.slice(intervals.length);
+  if(pair!==active){reloadPending=true;return}
+  const tfData=Object.fromEntries(intervals.map((tf,i)=>[tf,summarize(candles[i],tf)]));
+  const tick=Array.isArray(tickRaw)?tickRaw[0]:tickRaw,contract=contractRaw||{};
+  const stats=Array.isArray(statsRaw)?statsRaw.map(x=>{let time=Number(x.time??x.t);if(time>1e12)time/=1000;return {...x,time}}).filter(x=>Number.isFinite(x.time)&&x.time+300<=Date.now()/1000).sort((a,b)=>a.time-b.time):[];
+  const fundingHistory=Array.isArray(fundingRaw)?fundingRaw.slice().map(x=>({time:Number(x.time??x.t)||0,rate:validNumber(x.r??x.funding_rate??x.rate)})).filter(x=>x.rate!==null).sort((a,b)=>a.time-b.time).map(x=>x.rate):[];
+  const btc1=pair==='BTC_USDT'?tfData['1h']:btcRaw?summarize(btcRaw[0],'1h'):null;
+  const btc4=pair==='BTC_USDT'?tfData['4h']:btcRaw?summarize(btcRaw[1],'4h'):null;
+  const oiKey=stats.some(x=>statsValue(x,'open_interest_usd')!==null)?'open_interest_usd':'open_interest';
+  const lsrKey='lsr_account';
+  const oiChanges=Object.fromEntries([['15m',900],['30m',1800],['1h',3600],['4h',14400],['24h',86400]].map(([key,seconds])=>[key,changeOver(stats,oiKey,seconds)]));
+  const ratio=statsValue(stats.at(-1),lsrKey),ratioValid=ratio!==null&&ratio>0?ratio:null;
+  const lsrChanges=Object.fromEntries([['1h',3600],['4h',14400],['24h',86400]].map(([key,seconds])=>[key,changeOver(stats,lsrKey,seconds)]));
+  const funding=validNumber(contract.funding_rate??tick?.funding_rate??stats.at(-1)?.funding_rate),fundingOld=fundingHistory.length>1?fundingHistory[Math.max(0,fundingHistory.length-9)]:null;
+  const fundingChange=funding!==null&&fundingOld!==null?funding-fundingOld:null;
+  const fundingPercentile=funding!==null&&fundingHistory.length?fundingHistory.filter(v=>v<=funding).length/fundingHistory.length*100:null;
+  const b15=tfData['15m'],b1=tfData['1h'],b4=tfData['4h'],liq=liqStats(pair);
+  const volumeRatio=b15.rv;
+  const oi1h=oiChanges['1h'],oi4h=oiChanges['4h'],oi24h=oiChanges['24h'];
+  const priceChange=b4.price/b4.bars[Math.max(0,b4.bars.length-7)].close-1;
+  const last=validNumber(tick?.last)??b15.price,change=validNumber(tick?.change_percentage);
+  const resistance=b4.high,entryLow=resistance-.25*b4.atr,entryHigh=resistance+.10*b4.atr,invalidation=resistance+.75*b4.atr;
+  const targets=[b4.support,b4.priorLow,b4.priorLow-4.5*b4.atr].filter(v=>Number.isFinite(v)&&v<entryLow);
+  const riskDistance=Math.max(Number.EPSILON,invalidation-((entryLow+entryHigh)/2));
+  const rr=targets[0]!==undefined?(entryLow+entryHigh)/2-targets[0] > 0?(((entryLow+entryHigh)/2-targets[0])/riskDistance):0:0;
+  const late=priceChange<=-.12||last<b4.support-2*b4.atr;
+  const lifecycle=lifecycleState(pair),liquidations={...liq,available:liqLive};
+  const coverageItems=[
+   {label:'Price',weight:20,available:true},{label:'OI',weight:15,available:Object.values(oiChanges).some(v=>v!==null)},
+   {label:'Funding',weight:10,available:funding!==null},{label:'Long/Short',weight:10,available:ratioValid!==null},
+   {label:'Volume',weight:10,available:Number.isFinite(volumeRatio)},{label:'OBV',weight:10,available:Number.isFinite(b1.obvSlope)},
+   {label:'MACD',weight:10,available:Number.isFinite(b4.macd)},{label:'Liquidation activity',weight:10,available:liqLive},
+   {label:'BTC context',weight:5,available:!!btc4}
+  ];
+  const dataCoverage=Math.round(coverageItems.reduce((sum,item)=>sum+(item.available?item.weight:0),0));
+  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4:b4,bars1:b1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup:lifecycle.active,previouslyInvalidated:lifecycle.invalidated,coverage:dataCoverage});
+  const dataConfidence=Math.max(0,Math.round(engine.coverage-(liqLive?8:14)-14));
+  const longPercent=ratioValid===null?null:ratioValid/(1+ratioValid)*100;
+  const fundingStatus=funding===null?'UNAVAILABLE':funding>=.0008?'EXTREME LONG BIAS':funding>=.0005?'HIGH LONG BIAS':funding>0?'POSITIVE':'NEUTRAL / NEGATIVE';
+  const risk=late?'HIGH':dataConfidence<55||rr<1?'HIGH':b4.atr/b4.price>.08||rr<1.5?'MEDIUM':'LOW';
+  const entryReady=engine.entryReady;
+  const invalidated=engine.invalidated;
+  const status=engine.decision;
+  const levels={entry:[entryLow,entryHigh],invalidation,targets};
+  saveLifecycle(pair,engine);recordSignal(pair,engine,levels);
+  $('price').textContent=fmt(last);$('change').textContent=pct(change!==null?change/100:priceChange);$('change').className='small '+((change!==null?change<0:priceChange<0)?'down':'up');
+  lastSuccessAt=Date.now();
+  $('updated').textContent='LIVE · '+new Date(lastSuccessAt).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  $('squeezeScore').textContent=engine.squeeze.score;$('bearScore').textContent=engine.bearish.score;$('setupScore').textContent=engine.shortScore;$('entryScore').textContent=engine.entry.score;
+  $('squeezeBar').style.width=engine.squeeze.score+'%';$('bearBar').style.width=engine.bearish.score+'%';$('setupBar').style.width=engine.shortScore+'%';$('entryBar').style.width=engine.entry.score+'%';
+  $('phase').textContent=`${status} · ${engine.probableSqueeze?'PROBABLE LONG SQUEEZE':engine.squeeze.score>=60?'SQUEEZE RISK ELEVATED':'SQUEEZE NOT ESTABLISHED'} · RISK ${risk}`;
+  $('decision').textContent=invalidated?'⚫ INVALIDATED':late&&engine.setup?'⚠️ LATE SHORT — entry blocked':rr<1.5&&engine.setup?'SHORT ENTRY BLOCKED — POOR RISK/REWARD':status;
+  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · liquidation direction UNKNOWN · whale data unavailable`;
+  $('squeezeEvidence').textContent=`${engine.probableSqueeze?'PROBABLE LONG SQUEEZE':'No complete probable-squeeze confluence'} · Price ${priceChange<0?'↓':'↑'} ${pct(priceChange)} · OI 1H ${pct(oi1h)} · Funding ${funding===null?'н/д':pct(funding)} · LONG ${longPercent===null?'н/д':longPercent.toFixed(0)+'%'} · liquidation ${liq.spike?'SPIKE DETECTED':liqLive?'activity not elevated':'UNAVAILABLE'} · volume ${Number.isFinite(volumeRatio)?'RVOL '+volumeRatio.toFixed(2)+'×':'н/д'} · liquidation direction UNKNOWN`;
+  paintTF(Object.values(tfData));
+  const oiText=['15m','30m','1h','4h','24h'].map(k=>`${k} ${oiChanges[k]===null?'н/д':pct(oiChanges[k])}`).join(' · ')+` · ${b1.change1h<0&&oi1h!==null&&oi1h<0?'price↓ + OI↓: long reduction / possible liquidation':b1.change1h<0&&oi1h!==null&&oi1h>0?'price↓ + OI↑: short buildup':b1.change1h>0&&oi1h!==null&&oi1h>0?'price↑ + OI↑: long buildup':b1.change1h>0&&oi1h!==null&&oi1h<0?'price↑ + OI↓: short covering':'OI/price context unavailable'}`;
+  const lsrText=ratioValid===null?'н/д':`LONG ${longPercent.toFixed(0)}% / SHORT ${(100-longPercent).toFixed(0)}% · L/S ${ratioValid.toFixed(2)} · 1h ${pct(lsrChanges['1h'])} · 4h ${pct(lsrChanges['4h'])} · 24h ${pct(lsrChanges['24h'])} · ${ratioValid>=1.7?'LONG CROWDING HIGH':ratioValid>=1.3?'LONG CROWDING MODERATE':'crowding low'}`;
+  setMetric('funding',funding===null?'UNAVAILABLE':`${pct(funding)} · ${fundingStatus} · trend ${fundingChange===null?'н/д':pct(fundingChange)} · percentile ${fundingPercentile===null?'н/д':fundingPercentile.toFixed(0)+'%'}`,funding!==null&&funding>=.0005?'warn':'');
+  setMetric('oi',oiText,oi1h!==null&&oi1h<0?'down':'');
+  setMetric('ratio',lsrText,ratioValid!==null&&ratioValid>=1.5?'warn':'');
+  setMetric('liquidations',liqLive?`${liq.count} events · ${fmt(liq.quantity)} contracts · ${liq.spike?'SPIKE / ACCELERATION':'no abnormal spike'} · activity ${liq.count>0?'DETECTED':'not detected'} · Direction: UNKNOWN`:'UNAVAILABLE · WebSocket disconnected');
+  setMetric('volume',Number.isFinite(volumeRatio)?`RVOL ${volumeRatio.toFixed(2)}× · ${volumeRatio>=3?'EXTREME':volumeRatio>=1.5?'HIGH':'NORMAL'}`:'UNAVAILABLE',volumeRatio>=1.5?'down':'');
+  setMetric('obv',`${b1.obvBear?'↓ bearish':'↑/flat'} · slope ${pct(b1.obvSlope)} · ${b1.obvDivergence?'BEARISH DIVERGENCE':'no bearish divergence'}`,b1.obvBear?'down':'');
+  setMetric('macd',`MACD ${fmt(b4.macd)} · signal ${fmt(b4.signal)} · hist ${fmt(b4.hist)} · ${b4.bearishCrossover?'bearish crossover':b4.macdBear?'below signal':'no bearish crossover'}${b4.negativeHistogramAcceleration?' · negative acceleration':b4.histogramAcceleration?' · histogram momentum declining':''}`,b4.macdBear?'down':'');
+  setMetric('structure',`${b4.higherHigh?'HIGHER HIGH · ':''}${b4.lowerHigh?'LOWER HIGH · ':''}${b4.lowerLow?'LOWER LOW · ':''}${b4.rejection?'resistance rejection · ':''}${b4.broke?'BOS/support break':'support intact'}${b4.broke&&b4.lowerHigh?' · CHoCH bearish':''}`,b4.broke?'down':'');
+  setMetric('btc',btc1&&btc4?`1H ${pct(btc1.change1h)} · 4H ${pct(btc4.change)} · ${btc4.change<-.02?'BEARISH CONFIRMATION':btc4.change>.02?'BULLISH headwind':'neutral'}`:'BTC data unavailable',btc4?.change<0?'down':'');
+  $('quality').textContent=`DATA COVERAGE: ${engine.coverage}% · ${risk}`;
+  const coverageRoot=$('coverageList');coverageRoot.replaceChildren();
+  [...coverageItems.map(x=>({label:x.label,available:x.available})),{label:'Liquidation direction UNKNOWN',available:false},{label:'Whale data unavailable',available:false}]
+   .forEach(x=>{const chip=document.createElement('span');chip.className='check '+(x.available?'ok':'missing');chip.textContent=`${x.available?'✓':'⚠'} ${x.label}`;coverageRoot.append(chip)});
+  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · coverage adjusted for unknown liquidation direction and unavailable whale feed`;
+  if(optionalErrors.length){$('apiNotice').style.display='block';$('apiNotice').textContent='Some Gate.io data unavailable: '+optionalErrors.join(' · ')}
+  renderLevels(b4,entryReady,engine.setup&&!late&&rr>=1.5,late,rr);
+  const why=[],against=[];
+  if(ratioValid!==null&&ratioValid>=1.5)why.push(`✓ Long crowding ${longPercent.toFixed(0)}% (L/S ${ratioValid.toFixed(2)}).`);
+  if(funding!==null&&funding>=.0005)why.push(`✓ Extreme positive funding ${pct(funding)} supports squeeze-risk context.`);
+  if(oi1h!==null&&oi1h<0&&b1.change1h<0)why.push(`✓ Price ↓ + OI ↓ 1H (${pct(oi1h)}): long reduction / possible liquidation.`);
+  if(liq.spike)why.push(`✓ Liquidation activity spike detected (${liq.count} events); direction remains unknown.`);
+  if(volumeRatio>=1.5&&b15.change<0)why.push(`✓ Selling candle with elevated RVOL ${volumeRatio.toFixed(2)}×.`);
+  if(b1.obvBear)why.push(`✓ OBV bearish, slope ${pct(b1.obvSlope)}.`);
+  if(b1.obvDivergence)why.push('✓ Bearish OBV divergence: price higher high, OBV lower high.');
+  if(b4.macdBear)why.push(`✓ 4H MACD bearish${b4.histogramAcceleration?' with negative histogram acceleration':''}.`);
+  if(b4.rejection&&b4.lowerHigh&&b4.broke)why.push('✓ Rejection → lower high → support break / bearish BOS.');
+  else if(b4.broke)why.push('✓ Closed 4H candle broke local support.');
+  if(btc4?.change<-.02)why.push('✓ BTC bearish 4H context adds confirmation.');
+  if(liqLive)against.push('⚠ Liquidation direction UNKNOWN; activity is not labeled long liquidation.');
+  if(!btc4||btc4.change>.02)against.push('⚠ BTC data unavailable or bullish; this can oppose an altcoin short.');
+  if(!oi1h)against.push('⚠ OI 1H change unavailable; position reduction/buildup is unclear.');
+  if(volumeRatio<1||!Number.isFinite(volumeRatio))against.push('⚠ No volume expansion confirmation.');
+  if(!b4.broke)against.push('⚠ 4H support has not broken.');
+  if(late)against.push('⚠ LATE SHORT: major move may already have occurred.');
+  if(rr<1.5)against.push('⚠ Poor risk/reward; entry blocked below 1.5 R:R.');
+  if(!engine.squeeze.coverage)against.push('⚠ Squeeze evidence is incomplete; confidence is reduced.');
+  renderList('reasons',why,'No high-confluence squeeze/bearish factors confirmed.');
+  renderList('against',against,'No additional opposing factors detected.');
+ }catch(e){if(pair!==active)reloadPending=true;else if(!stopped){lastSuccessAt=0;clearDashboard();$('error').style.display='block';$('error').textContent=`Не вдалося підтвердити дані Gate.io: ${e.message}. Значення не підставляються.`;$('updated').textContent='DATA UNAVAILABLE'}}
+ finally{busy=false;if(reloadPending&&!stopped){reloadPending=false;load()}else reloadPending=false}
+}
+function addPair(){
+ const name=cleanPair($('pairInput').value);
+ if(!/^[A-Z0-9]+_USDT$/.test(name)){ $('pairInput').setCustomValidity('Формат контракту: BTC_USDT');$('pairInput').reportValidity();return }
+ if(pairs.some(p=>p.name===name)){pairs.find(p=>p.name===name).enabled=true;choose(name);renderPairs();$('pairInput').value='';return}
+ if(pairs.length>=50){alert('Максимум 50 пар.');return}
+ pairs.push({name,fav:false,enabled:true});active=name;savePairs();renderPairs();$('pairInput').value='';load();
+}
+$('pair').onchange=()=>choose($('pair').value);
+$('prev').onclick=()=>{const enabled=pairs.filter(p=>p.enabled),i=enabled.findIndex(p=>p.name===active);choose(enabled[(i-1+enabled.length)%enabled.length].name)};
+$('next').onclick=()=>{const enabled=pairs.filter(p=>p.enabled),i=enabled.findIndex(p=>p.name===active);choose(enabled[(i+1)%enabled.length].name)};
+$('moveUp').onclick=()=>movePair(-1);$('moveDown').onclick=()=>movePair(1);
+$('refresh').onclick=load;$('add').onclick=addPair;
+$('pairInput').addEventListener('input',()=> $('pairInput').setCustomValidity(''));
+$('pairInput').addEventListener('keydown',e=>{if(e.key==='Enter')addPair()});
+$('remove').onclick=()=>{if(pairs.length<=1)return;pairs=pairs.filter(p=>p.name!==active);if(!pairs.some(p=>p.enabled))pairs[0].enabled=true;active=(pairs.find(p=>p.enabled)||pairs[0]).name;savePairs();renderPairs();load()};
+$('favorite').onclick=()=>{const p=pairs.find(x=>x.name===active);if(p){p.fav=!p.fav;savePairs();renderPairs();$('favorite').textContent=p.fav?'★':'☆'}};
+$('togglePair').onclick=()=>{const p=pairs.find(x=>x.name===active);if(!p)return;if(p.enabled&&pairs.filter(x=>x.enabled).length<=1)return;p.enabled=!p.enabled;if(!p.enabled)active=(pairs.find(x=>x.enabled)||pairs[0]).name;else active=p.name;savePairs();renderPairs();load()};
+$('resetPairs').onclick=()=>{pairs=DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));active='BTC_USDT';savePairs();renderPairs();load()};
+function connectWS(){
+ if(stopped||socket)return;
+ try{socket=new WebSocket(WS)}catch(_){scheduleReconnect();return}
+ const current=socket;
+ current.onopen=()=>{if(socket!==current||stopped)return;liqLive=true;lastWsMessageAt=Date.now();current.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}));wsPingTimer=setInterval(()=>{if(socket===current&&current.readyState===WebSocket.OPEN)current.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.ping'}))},20000);load()};
+ current.onmessage=e=>{if(socket!==current||stopped)return;lastWsMessageAt=Date.now();try{const m=JSON.parse(e.data);if(m.channel!=='futures.public_liquidates'||m.event!=='update')return;const rows=Array.isArray(m.result)?m.result:[m.result];rows.forEach(x=>{if(!x?.contract)return;const size=Math.abs(Number(x.size)||0);if(!size)return;let t=Number(x.time_ms??x.time)||Date.now();if(t<1e12)t*=1000;(liquidations[x.contract]??=[]).push({t,size});liquidations[x.contract]=liquidations[x.contract].filter(v=>v.t>Date.now()-1800000).slice(-1000)})}catch(_){}};
+ current.onclose=()=>{if(socket!==current)return;socket=null;liqLive=false;if(wsPingTimer)clearInterval(wsPingTimer);wsPingTimer=null;if(!stopped){load();scheduleReconnect()}};
+ current.onerror=()=>{if(socket===current)try{current.close()}catch(_){}};
+}
+function scheduleReconnect(){if(stopped||reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectWS()},5000)}
+async function loadContracts(){
+ try{const contracts=await request('/futures/usdt/contracts');contracts.forEach(c=>{if(c.name?.endsWith('_USDT')&&c.in_delisting!==true)knownPairs.add(c.name)});renderAllPairs()}catch(_){renderAllPairs()}
+}
+renderPairs();$('favorite').textContent=pairs.find(p=>p.name===active)?.fav?'★':'☆';
+window.addEventListener('pagehide',stopApplication);
+window.addEventListener('pageshow',e=>{if(e.persisted)startApplication()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){checkFreshness();load()}});
+startApplication();
 </script>
 </body>
 </html>
