@@ -42,6 +42,7 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
 .check{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:.68rem;color:var(--muted)}
 .check.ok{color:var(--green)}.check.missing{color:var(--yellow)}
 #error{display:none;color:var(--red);padding:10px;border:1px solid #713543;border-radius:9px;margin-top:8px}
+#apiNotice{display:none;color:var(--yellow);padding:8px;border:1px solid #66531d;border-radius:9px;margin-top:8px;font-size:.74rem}
 #hint{font-size:.69rem;color:var(--quiet);line-height:1.55;margin-top:12px}
 @media(max-width:360px){body{padding:10px}.scores{grid-template-columns:1fr 1fr}.score{padding:9px}.score strong{font-size:1.5rem}}
 </style>
@@ -97,6 +98,7 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
 <div class="panel"><b id="levelsTitle">SHORT ENTRY ZONE · ATR / swing</b><div id="levels"><div class="small">Очікування даних…</div></div></div>
 <div class="panel"><b>WHY?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul><b>AGAINST SHORT</b><ul id="against"><li>Дані перевіряються…</li></ul><b>DECISION</b><div id="decision">WAIT</div></div>
 <div id="error" role="alert"></div>
+<div id="apiNotice" role="status"></div>
 <div id="hint">Gate.io Futures public REST/WebSocket · усі індикатори свічок розраховані тільки на закритих свічках і оновлюються щохвилини. Squeeze/Bearish/Entry engine незалежний від мережевих запитів; переходи сигналу зберігаються локально для майбутнього аналізу, але це не backtest. Confidence — евристика доступності даних, а не ймовірність прибутку; модель не навчена й не backtested. Ліквідації відображають кількість і raw contract size; напрямок UNKNOWN, не називається long liquidation. Необов'язкові OI, funding history та Long/Short можуть бути недоступні на Gate.io — відсутнє не домислюється. Whale, Team/Project wallet, Token Unlock дані та їх провайдери ще не підключені. Scanner, Telegram, backend та backtesting — майбутня робота. Аналітичний інструмент, не торгова рекомендація.</div>
 <script>
 'use strict';
@@ -112,7 +114,7 @@ function readList(){
  try{const saved=JSON.parse(localStorage.getItem('lw_pairs')||'null');if(Array.isArray(saved)){const valid=saved.map(x=>typeof x==='string'?{name:x,fav:false,enabled:true}:{...x,enabled:x.enabled!==false,fav:!!x.fav}).filter(x=>x&&/^[A-Z0-9]+_USDT$/.test(x.name)).slice(0,50);if(valid.length){if(!valid.some(p=>p.enabled))valid[0].enabled=true;return valid}}}catch(_){}
  return DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));
 }
-let pairs=readList(), active=localStorage.getItem('lw_gate_pair')||pairs[0].name, liquidations={}, socket=null, wsPingTimer=null, busy=false, reloadPending=false, liqLive=false, knownPairs=new Set(DEFAULT_PAIRS);
+let pairs=readList(), active=localStorage.getItem('lw_gate_pair')||pairs[0].name, liquidations={}, requests=new Set(), socket=null, wsPingTimer=null, reconnectTimer=null, refreshTimer=null, freshnessTimer=null, busy=false, reloadPending=false, liqLive=false, stopped=false, lastSuccessAt=0, lastWsMessageAt=0, knownPairs=new Set(DEFAULT_PAIRS);
 if(!pairs.some(p=>p.name===active&&p.enabled))active=(pairs.find(p=>p.enabled)||pairs[0]).name;
 function savePairs(){localStorage.setItem('lw_pairs',JSON.stringify(pairs));localStorage.setItem('lw_gate_pair',active)}
 function renderPairs(){
@@ -133,8 +135,16 @@ function renderAllPairs(){
  [...knownPairs].sort().forEach(name=>{const o=document.createElement('option');o.value=name;d.append(o)});
 }
 async function request(path){
- const r=await fetch(API+path,{cache:'no-store'});if(!r.ok)throw new Error(`Gate.io HTTP ${r.status}`);
- return r.json();
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+ requests.add(controller);
+ try{
+  const r=await fetch(API+path,{cache:'no-store',signal:controller.signal});
+  if(!r.ok)throw new Error(`Gate.io HTTP ${r.status} — ${path.split('?')[0]}`);
+  return await r.json();
+ }catch(e){
+  if(e.name==='AbortError')throw new Error(`Gate.io request timed out — ${path.split('?')[0]}`);
+  throw e;
+ }finally{clearTimeout(timeout);requests.delete(controller)}
 }
 function candle(c){
  const x=Array.isArray(c)?{t:+c[0],v:+c[1],close:+c[2],high:+c[3],low:+c[4],open:+c[5]}:{t:+c.t,v:+c.v,close:+c.c,high:+c.h,low:+c.l,open:+c.o};
@@ -267,20 +277,48 @@ function clearDashboard(){
  $('mtf').textContent='UNAVAILABLE';
  $('coverageList').textContent='⚠ Required market data unavailable';
  $('levels').textContent='Entry levels unavailable';$('levelsTitle').textContent='SHORT ENTRY ZONE · unavailable';
+ $('apiNotice').style.display='none';
  renderList('reasons',[],'No current market data.');
  renderList('against',['Market data unavailable; previous values cleared.'],'');
 }
+function checkFreshness(){
+ if(!lastSuccessAt)return;
+ const age=Date.now()-lastSuccessAt;
+ if(age>90000){
+  lastSuccessAt=0;clearDashboard();
+  $('updated').textContent=`STALE · last successful update ${Math.floor(age/1000)}s ago`;
+  $('error').style.display='block';$('error').textContent='Market data is stale; previous signal values have been cleared.';
+ }
+ if(liqLive&&Date.now()-lastWsMessageAt>60000){liqLive=false;try{socket?.close()}catch(_){}}
+}
+function stopApplication(){
+ stopped=true;
+ [refreshTimer,freshnessTimer,reconnectTimer,wsPingTimer].forEach(timer=>{if(timer)clearInterval(timer),clearTimeout(timer)});
+ refreshTimer=freshnessTimer=reconnectTimer=wsPingTimer=null;
+ requests.forEach(controller=>controller.abort());requests.clear();
+ const current=socket;socket=null;liqLive=false;
+ if(current){current.onopen=current.onmessage=current.onerror=current.onclose=null;try{current.close()}catch(_){}}
+}
+function startApplication(){
+ stopped=false;
+ if(!refreshTimer)refreshTimer=setInterval(load,60000);
+ if(!freshnessTimer)freshnessTimer=setInterval(checkFreshness,10000);
+ connectWS();load();loadContracts();
+}
 async function load(){
- if(busy){reloadPending=true;return}busy=true;const pair=active;$('error').style.display='none';$('updated').textContent='Оновлення…';
+ if(stopped)return;
+ if(busy){reloadPending=true;return}
+ busy=true;const pair=active,optionalErrors=[];$('error').style.display='none';$('apiNotice').style.display='none';$('updated').textContent='Оновлення…';
+ const optional=(label,path)=>request(path).catch(e=>{optionalErrors.push(`${label}: ${e.message}`);return null});
  try{
   const intervals=Object.keys(PERIODS);
   const responses=await Promise.all([
    ...intervals.map(tf=>request(`/futures/usdt/candlesticks?contract=${encodeURIComponent(pair)}&interval=${tf}&limit=120`)),
-   request(`/futures/usdt/tickers?contract=${encodeURIComponent(pair)}`).catch(()=>null),
-   request(`/futures/usdt/contracts/${encodeURIComponent(pair)}`).catch(()=>null),
-   request(`/futures/usdt/contract_stats?contract=${encodeURIComponent(pair)}&interval=5m&limit=300`).catch(()=>[]),
-   request(`/futures/usdt/funding_rate?contract=${encodeURIComponent(pair)}&limit=100`).catch(()=>[]),
-   pair==='BTC_USDT'?Promise.resolve(null):Promise.all(['1h','4h'].map(tf=>request(`/futures/usdt/candlesticks?contract=BTC_USDT&interval=${tf}&limit=60`))).catch(()=>null)
+   optional('Ticker',`/futures/usdt/tickers?contract=${encodeURIComponent(pair)}`),
+   optional('Contract',`/futures/usdt/contracts/${encodeURIComponent(pair)}`),
+   optional('OI / Long-Short','/futures/usdt/contract_stats?contract='+encodeURIComponent(pair)+'&interval=5m&limit=300'),
+   optional('Funding history',`/futures/usdt/funding_rate?contract=${encodeURIComponent(pair)}&limit=100`),
+   pair==='BTC_USDT'?Promise.resolve(null):Promise.all(['1h','4h'].map(tf=>request(`/futures/usdt/candlesticks?contract=BTC_USDT&interval=${tf}&limit=60`))).catch(e=>{optionalErrors.push(`BTC context: ${e.message}`);return null})
   ]);
   const candles=responses.slice(0,intervals.length);
   const [tickRaw,contractRaw,statsRaw,fundingRaw,btcRaw]=responses.slice(intervals.length);
@@ -329,7 +367,8 @@ async function load(){
   const levels={entry:[entryLow,entryHigh],invalidation,targets};
   saveLifecycle(pair,engine);recordSignal(pair,engine,levels);
   $('price').textContent=fmt(last);$('change').textContent=pct(change!==null?change/100:priceChange);$('change').className='small '+((change!==null?change<0:priceChange<0)?'down':'up');
-  $('updated').textContent='LIVE · '+new Date().toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  lastSuccessAt=Date.now();
+  $('updated').textContent='LIVE · '+new Date(lastSuccessAt).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   $('squeezeScore').textContent=engine.squeeze.score;$('bearScore').textContent=engine.bearish.score;$('setupScore').textContent=engine.shortScore;$('entryScore').textContent=engine.entry.score;
   $('squeezeBar').style.width=engine.squeeze.score+'%';$('bearBar').style.width=engine.bearish.score+'%';$('setupBar').style.width=engine.shortScore+'%';$('entryBar').style.width=engine.entry.score+'%';
   $('phase').textContent=`${status} · ${engine.probableSqueeze?'PROBABLE LONG SQUEEZE':engine.squeeze.score>=60?'SQUEEZE RISK ELEVATED':'SQUEEZE NOT ESTABLISHED'} · RISK ${risk}`;
@@ -353,6 +392,7 @@ async function load(){
   [...coverageItems.map(x=>({label:x.label,available:x.available})),{label:'Liquidation direction UNKNOWN',available:false},{label:'Whale data unavailable',available:false}]
    .forEach(x=>{const chip=document.createElement('span');chip.className='check '+(x.available?'ok':'missing');chip.textContent=`${x.available?'✓':'⚠'} ${x.label}`;coverageRoot.append(chip)});
   $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · coverage adjusted for unknown liquidation direction and unavailable whale feed`;
+  if(optionalErrors.length){$('apiNotice').style.display='block';$('apiNotice').textContent='Some Gate.io data unavailable: '+optionalErrors.join(' · ')}
   renderLevels(b4,entryReady,engine.setup&&!late&&rr>=1.5,late,rr);
   const why=[],against=[];
   if(ratioValid!==null&&ratioValid>=1.5)why.push(`✓ Long crowding ${longPercent.toFixed(0)}% (L/S ${ratioValid.toFixed(2)}).`);
@@ -376,8 +416,8 @@ async function load(){
   if(!engine.squeeze.coverage)against.push('⚠ Squeeze evidence is incomplete; confidence is reduced.');
   renderList('reasons',why,'No high-confluence squeeze/bearish factors confirmed.');
   renderList('against',against,'No additional opposing factors detected.');
- }catch(e){if(pair!==active)reloadPending=true;else{clearDashboard();$('error').style.display='block';$('error').textContent=`Не вдалося підтвердити дані Gate.io: ${e.message}. Значення не підставляються.`;$('updated').textContent='DATA UNAVAILABLE'}}
- finally{busy=false;if(reloadPending){reloadPending=false;load()}}
+ }catch(e){if(pair!==active)reloadPending=true;else if(!stopped){lastSuccessAt=0;clearDashboard();$('error').style.display='block';$('error').textContent=`Не вдалося підтвердити дані Gate.io: ${e.message}. Значення не підставляються.`;$('updated').textContent='DATA UNAVAILABLE'}}
+ finally{busy=false;if(reloadPending&&!stopped){reloadPending=false;load()}else reloadPending=false}
 }
 function addPair(){
  const name=cleanPair($('pairInput').value);
@@ -398,16 +438,23 @@ $('favorite').onclick=()=>{const p=pairs.find(x=>x.name===active);if(p){p.fav=!p
 $('togglePair').onclick=()=>{const p=pairs.find(x=>x.name===active);if(!p)return;if(p.enabled&&pairs.filter(x=>x.enabled).length<=1)return;p.enabled=!p.enabled;if(!p.enabled)active=(pairs.find(x=>x.enabled)||pairs[0]).name;else active=p.name;savePairs();renderPairs();load()};
 $('resetPairs').onclick=()=>{pairs=DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));active='BTC_USDT';savePairs();renderPairs();load()};
 function connectWS(){
- try{socket=new WebSocket(WS)}catch(_){setTimeout(connectWS,5000);return}
- socket.onopen=()=>{liqLive=true;socket.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}));wsPingTimer=setInterval(()=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.ping'}))},20000);load()};
- socket.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.channel!=='futures.public_liquidates'||m.event!=='update')return;const rows=Array.isArray(m.result)?m.result:[m.result];rows.forEach(x=>{if(!x?.contract)return;const size=Math.abs(Number(x.size)||0);if(!size)return;let t=Number(x.time_ms??x.time)||Date.now();if(t<1e12)t*=1000;(liquidations[x.contract]??=[]).push({t,size});liquidations[x.contract]=liquidations[x.contract].filter(v=>v.t>Date.now()-1800000).slice(-1000)})}catch(_){}};
- socket.onclose=()=>{liqLive=false;if(wsPingTimer)clearInterval(wsPingTimer);load();setTimeout(connectWS,5000)};socket.onerror=()=>socket.close();
+ if(stopped||socket)return;
+ try{socket=new WebSocket(WS)}catch(_){scheduleReconnect();return}
+ const current=socket;
+ current.onopen=()=>{if(socket!==current||stopped)return;liqLive=true;lastWsMessageAt=Date.now();current.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.public_liquidates',event:'subscribe',payload:['!all']}));wsPingTimer=setInterval(()=>{if(socket===current&&current.readyState===WebSocket.OPEN)current.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.ping'}))},20000);load()};
+ current.onmessage=e=>{if(socket!==current||stopped)return;lastWsMessageAt=Date.now();try{const m=JSON.parse(e.data);if(m.channel!=='futures.public_liquidates'||m.event!=='update')return;const rows=Array.isArray(m.result)?m.result:[m.result];rows.forEach(x=>{if(!x?.contract)return;const size=Math.abs(Number(x.size)||0);if(!size)return;let t=Number(x.time_ms??x.time)||Date.now();if(t<1e12)t*=1000;(liquidations[x.contract]??=[]).push({t,size});liquidations[x.contract]=liquidations[x.contract].filter(v=>v.t>Date.now()-1800000).slice(-1000)})}catch(_){}};
+ current.onclose=()=>{if(socket!==current)return;socket=null;liqLive=false;if(wsPingTimer)clearInterval(wsPingTimer);wsPingTimer=null;if(!stopped){load();scheduleReconnect()}};
+ current.onerror=()=>{if(socket===current)try{current.close()}catch(_){}};
 }
+function scheduleReconnect(){if(stopped||reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectWS()},5000)}
 async function loadContracts(){
  try{const contracts=await request('/futures/usdt/contracts');contracts.forEach(c=>{if(c.name?.endsWith('_USDT')&&c.in_delisting!==true)knownPairs.add(c.name)});renderAllPairs()}catch(_){renderAllPairs()}
 }
 renderPairs();$('favorite').textContent=pairs.find(p=>p.name===active)?.fav?'★':'☆';
-loadContracts();connectWS();load();setInterval(load,60000);
+window.addEventListener('pagehide',stopApplication);
+window.addEventListener('pageshow',e=>{if(e.persisted)startApplication()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){checkFreshness();load()}});
+startApplication();
 </script>
 </body>
 </html>
