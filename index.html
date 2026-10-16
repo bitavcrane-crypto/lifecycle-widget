@@ -97,7 +97,7 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
   <div class="metric"><div class="label">DATA COVERAGE / RISK</div><div class="value" id="quality">—</div></div>
 </section>
 <div class="panel"><b>DATA QUALITY</b><div id="coverageList"></div></div>
-<div class="panel"><b>DATA SOURCES · status / freshness</b><div class="small">Gate.io primary (browser-safe). External providers are backend-required and never alter scores.</div><div id="sourceList"></div><div id="providerList"></div><button id="exportEvents" type="button">Export backtest events (JSON)</button></div>
+<div class="panel"><b>DATA SOURCES · status / freshness</b><div class="small">Gate.io is the primary futures source. Kraken is not integrated until its endpoint, matching contracts, and regional availability can be verified. Coinbase Exchange is spot-only and is not used as a futures substitute.</div><div id="sourceList"></div><div id="providerList"></div><button id="exportEvents" type="button">Export backtest events (JSON)</button></div>
 <div class="panel"><b id="levelsTitle">SHORT ENTRY ZONE · ATR / swing</b><div id="levels"><div class="small">Очікування даних…</div></div></div>
 <div class="panel"><b>WHY?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul><b>AGAINST SHORT</b><ul id="against"><li>Дані перевіряються…</li></ul><b>DECISION</b><div id="decision">WAIT</div></div>
 <div id="error" role="alert"></div>
@@ -117,22 +117,20 @@ const cleanPair=s=>String(s||'').trim().toUpperCase().replace('/','_');
    Record: {metric,value,source,ts,freshness,status,confidence,fallback,error}
    status: LIVE | STALE | UNAVAILABLE | ERROR | NOT CONFIGURED. Only LIVE values are consumed by the engine. */
 const PROVIDERS={
- gate:{label:'Gate.io',access:'browser',primary:true,docs:'https://www.gate.com/docs/developers/apiv4/en/'},
- coinglass:{label:'CoinGlass',access:'backend-required',reason:'API key required',docs:'https://docs.coinglass.com/',metrics:['oi','funding','long_short','liquidations']},
- arkham:{label:'Arkham',access:'backend-required',reason:'API key / restricted access',docs:'https://docs.intel.arkm.com/',metrics:['whale','team_flow']},
- cryptoquant:{label:'CryptoQuant',access:'backend-required',reason:'API key required',docs:'https://cryptoquant.com/docs',metrics:['whale']},
- defillama:{label:'DefiLlama',access:'backend-required',reason:'unlock/emissions data needs verified (Pro) endpoint',docs:'https://api-docs.defillama.com/',metrics:['token_unlock']}
+ gate:{label:'Gate.io Futures',primary:true,status:'PRIMARY · public REST/WebSocket',docs:'https://www.gate.com/docs/developers/apiv4/en/futures/'},
+ kraken:{label:'Kraken Futures',status:'UNAVAILABLE · endpoint/contract verification required',docs:'https://docs.kraken.com/api/docs/futures-api/charts/market-analytics'},
+ coinbase:{label:'Coinbase Exchange',status:'NOT USED · spot data only',docs:'https://docs.cdp.coinbase.com/exchange/docs/welcome'}
 };
 const BACKEND_URL='';
 const EXTERNAL_ONLY=['whale','team_flow','token_unlock'];
 const MAX_AGE={price:90000,candles:90000,btc:90000,oi:900000,long_short:900000,funding:90000,liquidations:60000,whale:3600000,team_flow:3600000,token_unlock:86400000};
-const METRIC_LABELS={price:'Price',candles:'Candles',oi:'OI',funding:'Funding',long_short:'Long/Short',liquidations:'Liquidations',btc:'BTC context',whale:'Whale',team_flow:'Team flow',token_unlock:'Unlock'};
+const METRIC_LABELS={price:'Price',candles:'Candles',oi:'OI',funding:'Funding',long_short:'Long/Short',liquidations:'Liquidations',btc:'BTC context',kraken_oi:'Kraken OI confirmation',kraken_aggressor:'Kraken aggressor flow',kraken_liquidations:'Kraken liquidation volume',coinbase_spot:'Coinbase spot confirmation',whale:'Whale',team_flow:'Team flow',token_unlock:'Unlock'};
 const sources={
  records:{},
  fallbacks(metric){return Object.keys(PROVIDERS).filter(k=>PROVIDERS[k].metrics?.includes(metric))},
- set(metric,{value=null,source='gate',ts=null,status=null,confidence=null,error=null}={}){
+ set(metric,{value=null,source='gate',ts=null,status=null,confidence=null,error=null,unit=null}={}){
   const hasValue=value!==null&&value!==undefined&&!(typeof value==='number'&&!Number.isFinite(value));
-  this.records[metric]={metric,value:hasValue?value:null,source,ts:Number.isFinite(ts)?ts:null,status:status||(hasValue?'LIVE':'UNAVAILABLE'),confidence,error};
+  this.records[metric]={metric,value:hasValue?value:null,source,ts:Number.isFinite(ts)?ts:null,status:status||(hasValue?'LIVE':'UNAVAILABLE'),confidence,error,unit};
  },
  view(metric){
   const r=this.records[metric]||{metric,value:null,source:null,ts:null,status:EXTERNAL_ONLY.includes(metric)?'NOT CONFIGURED':'UNAVAILABLE',confidence:null,error:null};
@@ -142,9 +140,9 @@ const sources={
   return {...r,status,freshness:age,fallback:this.fallbacks(metric)};
  },
  valid(metric){const v=this.view(metric);return v.status==='LIVE'?v.value:null},
- snapshot(metrics){return Object.fromEntries(metrics.map(m=>{const v=this.view(m);return [m,{value:v.value,source:v.source,ts:v.ts,freshness_ms:v.freshness,status:v.status,confidence:v.confidence,fallback:v.fallback,...(v.error?{error:v.error}:{})}]}))}
+ snapshot(metrics){return Object.fromEntries(metrics.map(m=>{const v=this.view(m);return [m,{value:v.value,source:v.source,unit:v.unit,ts:v.ts,freshness_ms:v.freshness,status:v.status,confidence:v.confidence,fallback:v.fallback,...(v.error?{error:v.error}:{})}]}))}
 };
-const CORE_METRICS=['price','candles','oi','funding','long_short','liquidations','btc'];
+const CORE_METRICS=['price','candles','oi','funding','long_short','liquidations','btc','kraken_oi','kraken_aggressor','kraken_liquidations','coinbase_spot'];
 const ALL_METRICS=[...CORE_METRICS,...EXTERNAL_ONLY];
 /* Backend-ready interface: a server-side aggregator holds provider keys and returns
    {metrics:{whale:{value,source,ts,confidence}}}. Browser never calls auth/CORS-limited providers. */
@@ -168,7 +166,7 @@ function renderSources(){
   chip.textContent=`${METRIC_LABELS[m]} · ${v.status}${v.status==='LIVE'||v.status==='STALE'?` · ${v.source} · ${Math.round(v.freshness/1000)}s`:''}`;
   chip.title=v.error||(v.fallback.length?'fallback slots: '+v.fallback.join(', '):'');root.append(chip)});
  const pr=$('providerList');pr.replaceChildren();
- Object.entries(PROVIDERS).forEach(([k,p])=>{const chip=document.createElement('span');chip.className='check '+(p.primary?'ok':'off');chip.textContent=`${p.label} · ${p.primary?'PRIMARY · browser public':'NOT CONFIGURED · backend-required'}`;chip.title=p.reason||p.docs;pr.append(chip)});
+ Object.entries(PROVIDERS).forEach(([k,p])=>{const chip=document.createElement('span');chip.className='check '+(p.primary?'ok':p.status.startsWith('UNAVAILABLE')?'missing':'off');chip.textContent=`${p.label} · ${p.status}`;chip.title=p.docs;pr.append(chip)});
 }
 function readList(){
  try{const saved=JSON.parse(localStorage.getItem('lw_pairs')||'null');if(Array.isArray(saved)){const valid=saved.map(x=>typeof x==='string'?{name:x,fav:false,enabled:true}:{...x,enabled:x.enabled!==false,fav:!!x.fav}).filter(x=>x&&/^[A-Z0-9]+_USDT$/.test(x.name)).slice(0,50);if(valid.length){if(!valid.some(p=>p.enabled))valid[0].enabled=true;return valid}}}catch(_){}
@@ -284,7 +282,7 @@ function weightedScore(parts){
  return {score:weight?Math.round(active.reduce((n,p)=>n+p.weight*clamp(p.value)/100,0)/weight*100):0,coverage:Math.round(weight)};
 }
 function evaluateSignal(input){
- const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated,coverage,qualityOk=true}=input;
+ const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated,coverage,qualityOk=true,mandatoryConfirmation=false}=input;
  const oiScore=(value,threshold)=>value===null?NaN:value<0?priceChange<0?(value<=threshold?100:75):25:value>0?priceChange>0?(ratio!==null&&ratio>=1.3?75:55):priceChange<0?15:35:35;
  const squeeze=weightedScore([
   {weight:20,value:ratio===null?NaN:ratio>=2?100:ratio>=1.5?75:ratio>=1.2?45:15},
@@ -316,8 +314,8 @@ function evaluateSignal(input){
  const setup=shortScore>=60&&squeeze.score>=55&&bearish.score>=50;
  const probableSqueeze=priceChange<0&&oi1h!==null&&oi1h<0&&funding!==null&&funding>0&&ratio!==null&&ratio>=1.3&&liqs.available&&liqs.spike&&volumeRatio>=1.3;
  const invalidated=!!previouslyInvalidated&&!setup||!!hadSetup&&price>bars4.high+bars4.atr*.25&&oi1h!==null&&oi1h>0&&!bars4.macdBear;
- const entryReady=setup&&probableSqueeze&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60&&qualityOk;
- const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup&&(late||rr<1.5||!qualityOk||entry.score<70||probableSqueeze&&bearish.score>=70)?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
+ const entryReady=setup&&probableSqueeze&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60&&qualityOk&&mandatoryConfirmation;
+ const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup&&(late||rr<1.5||!qualityOk||!mandatoryConfirmation||entry.score<70||probableSqueeze&&bearish.score>=70)?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
  return {squeeze,bearish,entry,shortScore,qualityOk,coverage:dataCoverage,setup,probableSqueeze,entryReady,invalidated,decision,midpoint};
 }
 function renderList(id,items,empty){
@@ -430,17 +428,19 @@ async function load(){
   ];
   const dataCoverage=Math.round(coverageItems.reduce((sum,item)=>sum+(item.available?item.weight:0),0));
   const now=Date.now(),candleTs=Math.max(...Object.values(tfData).map(t=>(t.bars.at(-1).t+PERIODS[t.tf])*1000));
-  sources.set('price',{value:last,ts:validNumber(tick?.last)!==null?now:candleTs,confidence:1});
-  sources.set('candles',{value:b4.price,ts:now,confidence:1});
+  sources.set('price',{value:last,ts:validNumber(tick?.last)!==null?now:candleTs,confidence:1,unit:'USDT'});
+  sources.set('candles',{value:b4.price,ts:now,confidence:1,unit:'USDT close'});
   const statsMissing={status:statsAll.length?'STALE':'UNAVAILABLE',ts:statsTs};
-  sources.set('oi',Object.values(oiChanges).some(v=>v!==null)?{value:oi1h,ts:statsTs,confidence:.8}:failed['OI / Long-Short']?{status:'ERROR',error:failed['OI / Long-Short']}:statsMissing);
-  sources.set('long_short',ratioValid!==null?{value:ratioValid,ts:statsTs,confidence:.8}:failed['OI / Long-Short']?{status:'ERROR',error:failed['OI / Long-Short']}:statsMissing);
-  sources.set('funding',funding!==null?{value:funding,ts:now,confidence:.9}:failed.Contract&&failed.Ticker?{status:'ERROR',error:failed.Contract}:{});
-  sources.set('liquidations',liqLive?{value:liq.count,ts:lastWsMessageAt,confidence:.5}:{});
-  sources.set('btc',btc4?{value:btc4.change,ts:now,confidence:.9}:failed['BTC context']?{status:'ERROR',error:failed['BTC context']}:{});
+  sources.set('oi',Object.values(oiChanges).some(v=>v!==null)?{value:oi1h,ts:statsTs,confidence:.8,unit:'fractional change · 1h'}:failed['OI / Long-Short']?{status:'ERROR',error:failed['OI / Long-Short']}:statsMissing);
+  sources.set('long_short',ratioValid!==null?{value:ratioValid,ts:statsTs,confidence:.8,unit:'account ratio'}:failed['OI / Long-Short']?{status:'ERROR',error:failed['OI / Long-Short']}:statsMissing);
+  sources.set('funding',funding!==null?{value:funding,ts:now,confidence:.9,unit:'fraction / funding interval'}:failed.Contract&&failed.Ticker?{status:'ERROR',error:failed.Contract}:{});
+  sources.set('liquidations',liqLive?{value:liq.count,ts:lastWsMessageAt,confidence:.5,unit:'events / 15m'}:{});
+  sources.set('btc',btc4?{value:btc4.change,ts:now,confidence:.9,unit:'fractional change · 4h'}:failed['BTC context']?{status:'ERROR',error:failed['BTC context']}:{});
+  ['kraken_oi','kraken_aggressor','kraken_liquidations','coinbase_spot'].forEach(metric=>sources.set(metric,{status:'UNAVAILABLE',source:null,error:'Public endpoint, matching instrument, and regional availability are not verified.'}));
   const qualityOk=['price','candles'].every(m=>sources.valid(m)!==null);
-  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4:b4,bars1:b1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup:lifecycle.active,previouslyInvalidated:lifecycle.invalidated,coverage:dataCoverage,qualityOk});
-  const dataConfidence=Math.max(0,Math.round(engine.coverage-(liqLive?8:14)-14));
+  const independentConfirmation=sources.valid('kraken_oi')!==null;
+  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4:b4,bars1:b1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup:lifecycle.active,previouslyInvalidated:lifecycle.invalidated,coverage:dataCoverage,qualityOk,mandatoryConfirmation:independentConfirmation});
+  const dataConfidence=Math.max(0,Math.round(engine.coverage-(liqLive?8:14)-14-5));
   const longPercent=ratioValid===null?null:ratioValid/(1+ratioValid)*100;
   const fundingStatus=funding===null?'UNAVAILABLE':funding>=.0008?'EXTREME LONG BIAS':funding>=.0005?'HIGH LONG BIAS':funding>0?'POSITIVE':'NEUTRAL / NEGATIVE';
   const risk=late?'HIGH':dataConfidence<55||rr<1?'HIGH':b4.atr/b4.price>.08||rr<1.5?'MEDIUM':'LOW';
@@ -451,7 +451,7 @@ async function load(){
   saveLifecycle(pair,engine);recordSignal(pair,engine,levels);
   recordEvent({schema:3,timestamp:now,symbol:pair,price:last,scores:{squeeze:engine.squeeze.score,bearish:engine.bearish.score,entry:engine.entry.score,short:engine.shortScore},
    metrics:{funding,oi:oiChanges,long_short:ratioValid,long_short_change:lsrChanges,liquidations:{count:liq.count,quantity:liq.quantity,spike:liq.spike,available:liqLive,direction:'UNKNOWN'},rvol:Number.isFinite(volumeRatio)?volumeRatio:null,obv_slope:b1.obvSlope,macd_hist_4h:b4.hist,price_change_4h:priceChange,rr:Number.isFinite(rr)?rr:null,late},
-   provenance:sources.snapshot(ALL_METRICS),quality:{coverage:engine.coverage,confidence:dataConfidence,gate_ok:qualityOk,risk},decision:engine.decision,levels});
+   provenance:sources.snapshot(ALL_METRICS),quality:{coverage:engine.coverage,confidence:dataConfidence,gate_ok:qualityOk,independent_confirmation:independentConfirmation,risk},decision:engine.decision,levels});
   refreshExternal(pair);renderSources();
   $('price').textContent=fmt(last);$('change').textContent=pct(change!==null?change/100:priceChange);$('change').className='small '+((change!==null?change<0:priceChange<0)?'down':'up');
   lastSuccessAt=Date.now();
@@ -460,7 +460,7 @@ async function load(){
   $('squeezeBar').style.width=engine.squeeze.score+'%';$('bearBar').style.width=engine.bearish.score+'%';$('setupBar').style.width=engine.shortScore+'%';$('entryBar').style.width=engine.entry.score+'%';
   $('phase').textContent=`${status} · ${engine.probableSqueeze?'PROBABLE LONG SQUEEZE':engine.squeeze.score>=60?'SQUEEZE RISK ELEVATED':'SQUEEZE NOT ESTABLISHED'} · RISK ${risk}`;
   $('decision').textContent=invalidated?'⚫ INVALIDATED':late&&engine.setup?'⚠️ LATE SHORT — entry blocked':rr<1.5&&engine.setup?'SHORT ENTRY BLOCKED — POOR RISK/REWARD':status;
-  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · liquidation direction UNKNOWN · whale data unavailable`;
+  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · no independent exchange confirmation · liquidation direction UNKNOWN`;
   $('squeezeEvidence').textContent=`${engine.probableSqueeze?'PROBABLE LONG SQUEEZE':'No complete probable-squeeze confluence'} · Price ${priceChange<0?'↓':'↑'} ${pct(priceChange)} · OI 1H ${pct(oi1h)} · Funding ${funding===null?'н/д':pct(funding)} · LONG ${longPercent===null?'н/д':longPercent.toFixed(0)+'%'} · liquidation ${liq.spike?'SPIKE DETECTED':liqLive?'activity not elevated':'UNAVAILABLE'} · volume ${Number.isFinite(volumeRatio)?'RVOL '+volumeRatio.toFixed(2)+'×':'н/д'} · liquidation direction UNKNOWN`;
   paintTF(Object.values(tfData));
   const oiText=['15m','30m','1h','4h','24h'].map(k=>`${k} ${oiChanges[k]===null?'н/д':pct(oiChanges[k])}`).join(' · ')+` · ${b1.change1h<0&&oi1h!==null&&oi1h<0?'price↓ + OI↓: long reduction / possible liquidation':b1.change1h<0&&oi1h!==null&&oi1h>0?'price↓ + OI↑: short buildup':b1.change1h>0&&oi1h!==null&&oi1h>0?'price↑ + OI↑: long buildup':b1.change1h>0&&oi1h!==null&&oi1h<0?'price↑ + OI↓: short covering':'OI/price context unavailable'}`;
@@ -476,9 +476,9 @@ async function load(){
   setMetric('btc',btc1&&btc4?`1H ${pct(btc1.change1h)} · 4H ${pct(btc4.change)} · ${btc4.change<-.02?'BEARISH CONFIRMATION':btc4.change>.02?'BULLISH headwind':'neutral'}`:'BTC data unavailable',btc4?.change<0?'down':'');
   $('quality').textContent=`DATA COVERAGE: ${engine.coverage}% · ${risk}`;
   const coverageRoot=$('coverageList');coverageRoot.replaceChildren();
-  [...coverageItems.map(x=>({label:x.label,available:x.available})),{label:'Liquidation direction UNKNOWN',available:false},{label:'Whale data unavailable',available:false}]
+  [...coverageItems.map(x=>({label:x.label,available:x.available})),{label:'Independent exchange confirmation unavailable',available:false},{label:'Liquidation direction UNKNOWN',available:false},{label:'Whale data unavailable',available:false}]
    .forEach(x=>{const chip=document.createElement('span');chip.className='check '+(x.available?'ok':'missing');chip.textContent=`${x.available?'✓':'⚠'} ${x.label}`;coverageRoot.append(chip)});
-  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · coverage adjusted for unknown liquidation direction and unavailable whale feed`;
+  $('confidence').textContent=`CONFIDENCE (data quality, not win probability): ${dataConfidence}% · reduced because independent confirmation is unavailable`;
   if(optionalErrors.length){$('apiNotice').style.display='block';$('apiNotice').textContent='Some Gate.io data unavailable: '+optionalErrors.join(' · ')}
   renderLevels(b4,entryReady,engine.setup&&!late&&rr>=1.5,late,rr);
   const why=[],against=[];
@@ -494,6 +494,8 @@ async function load(){
   else if(b4.broke)why.push('✓ Closed 4H candle broke local support.');
   if(btc4?.change<-.02)why.push('✓ BTC bearish 4H context adds confirmation.');
   if(liqLive)against.push('⚠ Liquidation direction UNKNOWN; activity is not labeled long liquidation.');
+  against.push('⚠ Required Kraken matching-contract OI confirmation is UNAVAILABLE; SHORT ENTRY is blocked.');
+  against.push('⚠ Coinbase spot data is not used as futures confirmation.');
   if(!btc4||btc4.change>.02)against.push('⚠ BTC data unavailable or bullish; this can oppose an altcoin short.');
   if(!oi1h)against.push('⚠ OI 1H change unavailable; position reduction/buildup is unclear.');
   if(volumeRatio<1||!Number.isFinite(volumeRatio))against.push('⚠ No volume expansion confirmation.');
