@@ -40,7 +40,9 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
 #reasons{padding-left:18px;margin-top:5px;color:var(--muted);font-size:.8rem}
 #coverageList{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
 .check{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:.68rem;color:var(--muted)}
-.check.ok{color:var(--green)}.check.missing{color:var(--yellow)}
+.check.ok{color:var(--green)}.check.missing{color:var(--yellow)}.check.err{color:var(--red)}.check.off{color:var(--quiet)}
+#sourceList,#providerList{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+#exportEvents{margin-top:8px;padding:6px 9px;font-size:.72rem}
 #error{display:none;color:var(--red);padding:10px;border:1px solid #713543;border-radius:9px;margin-top:8px}
 #apiNotice{display:none;color:var(--yellow);padding:8px;border:1px solid #66531d;border-radius:9px;margin-top:8px;font-size:.74rem}
 #hint{font-size:.69rem;color:var(--quiet);line-height:1.55;margin-top:12px}
@@ -95,11 +97,12 @@ h1{font-size:1rem;letter-spacing:.04em;margin-bottom:3px}
   <div class="metric"><div class="label">DATA COVERAGE / RISK</div><div class="value" id="quality">—</div></div>
 </section>
 <div class="panel"><b>DATA QUALITY</b><div id="coverageList"></div></div>
+<div class="panel"><b>DATA SOURCES · status / freshness</b><div class="small">Gate.io primary (browser-safe). External providers are backend-required and never alter scores.</div><div id="sourceList"></div><div id="providerList"></div><button id="exportEvents" type="button">Export backtest events (JSON)</button></div>
 <div class="panel"><b id="levelsTitle">SHORT ENTRY ZONE · ATR / swing</b><div id="levels"><div class="small">Очікування даних…</div></div></div>
 <div class="panel"><b>WHY?</b><ul id="reasons"><li>Очікування даних Gate.io…</li></ul><b>AGAINST SHORT</b><ul id="against"><li>Дані перевіряються…</li></ul><b>DECISION</b><div id="decision">WAIT</div></div>
 <div id="error" role="alert"></div>
 <div id="apiNotice" role="status"></div>
-<div id="hint">Gate.io Futures public REST/WebSocket · усі індикатори свічок розраховані тільки на закритих свічках і оновлюються щохвилини. Squeeze/Bearish/Entry engine незалежний від мережевих запитів; переходи сигналу зберігаються локально для майбутнього аналізу, але це не backtest. Confidence — евристика доступності даних, а не ймовірність прибутку; модель не навчена й не backtested. Ліквідації відображають кількість і raw contract size; напрямок UNKNOWN, не називається long liquidation. Необов'язкові OI, funding history та Long/Short можуть бути недоступні на Gate.io — відсутнє не домислюється. Whale, Team/Project wallet, Token Unlock дані та їх провайдери ще не підключені. Scanner, Telegram, backend та backtesting — майбутня робота. Аналітичний інструмент, не торгова рекомендація.</div>
+<div id="hint">Gate.io Futures public REST/WebSocket · усі індикатори свічок розраховані тільки на закритих свічках і оновлюються щохвилини. Squeeze/Bearish/Entry engine незалежний від мережевих запитів; переходи сигналу зберігаються локально для майбутнього аналізу, але це не backtest. Confidence — евристика доступності даних, а не ймовірність прибутку; модель не навчена й не backtested. Ліквідації відображають кількість і raw contract size; напрямок UNKNOWN, не називається long liquidation. Необов'язкові OI, funding history та Long/Short можуть бути недоступні на Gate.io — відсутнє не домислюється. Whale, Team/Project wallet, Token Unlock: провайдери (CoinGlass, Arkham, CryptoQuant, DefiLlama) вимагають backend і не підключені; слоти fallback лише відображаються й не впливають на scores. Кожна метрика має source/timestamp/freshness/status (LIVE/STALE/UNAVAILABLE/ERROR/NOT CONFIGURED); події пишуться у backtest-ready журнал (Export). Scanner, Telegram, backend та backtesting — майбутня робота. Аналітичний інструмент, не торгова рекомендація.</div>
 <script>
 'use strict';
 const API='https://api.gateio.ws/api/v4';
@@ -110,6 +113,63 @@ const $=id=>document.getElementById(id), clamp=(v,a=0,b=100)=>Math.max(a,Math.mi
 const fmt=v=>Number.isFinite(v)?(v>=1000?v.toLocaleString('en-US',{maximumFractionDigits:2}):v>=10?v.toFixed(3):v>=.1?v.toFixed(4):v.toFixed(7)):'—';
 const pct=v=>Number.isFinite(v)?`${v>=0?'+':''}${(v*100).toFixed(2)}%`:'н/д';
 const cleanPair=s=>String(s||'').trim().toUpperCase().replace('/','_');
+/* ===== Frontend layer: source manager / normalized metric model =====
+   Record: {metric,value,source,ts,freshness,status,confidence,fallback,error}
+   status: LIVE | STALE | UNAVAILABLE | ERROR | NOT CONFIGURED. Only LIVE values are consumed by the engine. */
+const PROVIDERS={
+ gate:{label:'Gate.io',access:'browser',primary:true,docs:'https://www.gate.com/docs/developers/apiv4/en/'},
+ coinglass:{label:'CoinGlass',access:'backend-required',reason:'API key required',docs:'https://docs.coinglass.com/',metrics:['oi','funding','long_short','liquidations']},
+ arkham:{label:'Arkham',access:'backend-required',reason:'API key / restricted access',docs:'https://docs.intel.arkm.com/',metrics:['whale','team_flow']},
+ cryptoquant:{label:'CryptoQuant',access:'backend-required',reason:'API key required',docs:'https://cryptoquant.com/docs',metrics:['whale']},
+ defillama:{label:'DefiLlama',access:'backend-required',reason:'unlock/emissions data needs verified (Pro) endpoint',docs:'https://api-docs.defillama.com/',metrics:['token_unlock']}
+};
+const BACKEND_URL='';
+const EXTERNAL_ONLY=['whale','team_flow','token_unlock'];
+const MAX_AGE={price:90000,candles:90000,btc:90000,oi:900000,long_short:900000,funding:90000,liquidations:60000,whale:3600000,team_flow:3600000,token_unlock:86400000};
+const METRIC_LABELS={price:'Price',candles:'Candles',oi:'OI',funding:'Funding',long_short:'Long/Short',liquidations:'Liquidations',btc:'BTC context',whale:'Whale',team_flow:'Team flow',token_unlock:'Unlock'};
+const sources={
+ records:{},
+ fallbacks(metric){return Object.keys(PROVIDERS).filter(k=>PROVIDERS[k].metrics?.includes(metric))},
+ set(metric,{value=null,source='gate',ts=null,status=null,confidence=null,error=null}={}){
+  const hasValue=value!==null&&value!==undefined&&!(typeof value==='number'&&!Number.isFinite(value));
+  this.records[metric]={metric,value:hasValue?value:null,source,ts:Number.isFinite(ts)?ts:null,status:status||(hasValue?'LIVE':'UNAVAILABLE'),confidence,error};
+ },
+ view(metric){
+  const r=this.records[metric]||{metric,value:null,source:null,ts:null,status:EXTERNAL_ONLY.includes(metric)?'NOT CONFIGURED':'UNAVAILABLE',confidence:null,error:null};
+  const age=r.ts===null?null:Math.max(0,Date.now()-r.ts);
+  let status=r.status;
+  if(status==='LIVE'&&(r.value===null||age===null||age>(MAX_AGE[metric]||90000)))status=r.value===null?'UNAVAILABLE':'STALE';
+  return {...r,status,freshness:age,fallback:this.fallbacks(metric)};
+ },
+ valid(metric){const v=this.view(metric);return v.status==='LIVE'?v.value:null},
+ snapshot(metrics){return Object.fromEntries(metrics.map(m=>{const v=this.view(m);return [m,{value:v.value,source:v.source,ts:v.ts,freshness_ms:v.freshness,status:v.status,confidence:v.confidence,fallback:v.fallback,...(v.error?{error:v.error}:{})}]}))}
+};
+const CORE_METRICS=['price','candles','oi','funding','long_short','liquidations','btc'];
+const ALL_METRICS=[...CORE_METRICS,...EXTERNAL_ONLY];
+/* Backend-ready interface: a server-side aggregator holds provider keys and returns
+   {metrics:{whale:{value,source,ts,confidence}}}. Browser never calls auth/CORS-limited providers. */
+async function refreshExternal(pair){
+ if(!BACKEND_URL){EXTERNAL_ONLY.forEach(m=>sources.set(m,{status:'NOT CONFIGURED',source:null}));return}
+ try{
+  const r=await fetch(`${BACKEND_URL}/v1/metrics?symbol=${encodeURIComponent(pair)}`,{cache:'no-store'});
+  if(!r.ok)throw new Error('backend HTTP '+r.status);
+  const body=await r.json(),m=body?.metrics||{};
+  if(pair!==active)return;
+  EXTERNAL_ONLY.forEach(k=>{const x=m[k];
+   if(x&&Object.hasOwn(PROVIDERS,x.source)&&x.source!=='gate'&&Number.isFinite(+x.ts)&&x.value!==null&&x.value!==undefined)sources.set(k,{value:x.value,source:x.source,ts:+x.ts,confidence:Number.isFinite(+x.confidence)?+x.confidence:null});
+   else sources.set(k,{status:'UNAVAILABLE',source:null})});
+ }catch(e){EXTERNAL_ONLY.forEach(k=>sources.set(k,{status:'ERROR',source:null,error:e.message}))}
+ renderSources();
+}
+function renderSources(){
+ const root=$('sourceList');if(!root)return;root.replaceChildren();
+ ALL_METRICS.forEach(m=>{const v=sources.view(m),chip=document.createElement('span');
+  chip.className='check '+(v.status==='LIVE'?'ok':v.status==='ERROR'?'err':v.status==='NOT CONFIGURED'?'off':'missing');
+  chip.textContent=`${METRIC_LABELS[m]} · ${v.status}${v.status==='LIVE'||v.status==='STALE'?` · ${v.source} · ${Math.round(v.freshness/1000)}s`:''}`;
+  chip.title=v.error||(v.fallback.length?'fallback slots: '+v.fallback.join(', '):'');root.append(chip)});
+ const pr=$('providerList');pr.replaceChildren();
+ Object.entries(PROVIDERS).forEach(([k,p])=>{const chip=document.createElement('span');chip.className='check '+(p.primary?'ok':'off');chip.textContent=`${p.label} · ${p.primary?'PRIMARY · browser public':'NOT CONFIGURED · backend-required'}`;chip.title=p.reason||p.docs;pr.append(chip)});
+}
 function readList(){
  try{const saved=JSON.parse(localStorage.getItem('lw_pairs')||'null');if(Array.isArray(saved)){const valid=saved.map(x=>typeof x==='string'?{name:x,fav:false,enabled:true}:{...x,enabled:x.enabled!==false,fav:!!x.fav}).filter(x=>x&&/^[A-Z0-9]+_USDT$/.test(x.name)).slice(0,50);if(valid.length){if(!valid.some(p=>p.enabled))valid[0].enabled=true;return valid}}}catch(_){}
  return DEFAULT_PAIRS.map(name=>({name,fav:false,enabled:true}));
@@ -205,6 +265,17 @@ function recordSignal(pair,result,levels){
   localStorage.setItem('lw_signal_history_v2',JSON.stringify(history.slice(-300)));
  }catch(_){}
 }
+function recordEvent(rec){
+ try{
+  const key='lw_signal_events_v3',events=JSON.parse(localStorage.getItem(key)||'[]'),last=events.filter(x=>x.symbol===rec.symbol).at(-1);
+  if(last&&rec.timestamp-last.timestamp<55000&&last.decision===rec.decision)return;
+  events.push(rec);localStorage.setItem(key,JSON.stringify(events.slice(-500)));
+ }catch(_){}
+}
+function exportEvents(){
+ let data='[]';try{data=localStorage.getItem('lw_signal_events_v3')||'[]'}catch(_){}
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download='squeeze-radar-events.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
 function setMetric(id,text,state=''){
  const el=$(id);el.textContent=text;el.className='value '+state;
 }
@@ -213,7 +284,7 @@ function weightedScore(parts){
  return {score:weight?Math.round(active.reduce((n,p)=>n+p.weight*clamp(p.value)/100,0)/weight*100):0,coverage:Math.round(weight)};
 }
 function evaluateSignal(input){
- const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated,coverage}=input;
+ const {ratio,funding,oi1h,oi4h,oi24h,priceChange,liqs,volumeRatio,tfs,bars4,bars1,btc1h,btc4h,price,entryLow,entryHigh,rr,late,hadSetup,previouslyInvalidated,coverage,qualityOk=true}=input;
  const oiScore=(value,threshold)=>value===null?NaN:value<0?priceChange<0?(value<=threshold?100:75):25:value>0?priceChange>0?(ratio!==null&&ratio>=1.3?75:55):priceChange<0?15:35:35;
  const squeeze=weightedScore([
   {weight:20,value:ratio===null?NaN:ratio>=2?100:ratio>=1.5?75:ratio>=1.2?45:15},
@@ -231,7 +302,7 @@ function evaluateSignal(input){
   {weight:10,value:Number.isFinite(volumeRatio)?volumeRatio>=2&&priceChange<0?100:volumeRatio>=1.3&&priceChange<0?75:volumeRatio<.8?10:35:NaN},
   {weight:15,value:clamp(tfs.filter(t=>t.change<0).length/5*100)},
   {weight:10,value:btc4h&&btc1h?(btc4h.change<-.02?100:btc1h.change<-.01?75:btc4h.change<0?55:btc4h.change>.02?0:35):NaN},
-  {weight:15,value:oi1h!==null&&oi1h<0&&priceChange<0?80:oi1h!==null&&oi1h>0&&priceChange<0?45:35}
+  {weight:15,value:oi1h===null?NaN:oi1h<0&&priceChange<0?80:oi1h>0&&priceChange<0?45:35}
  ]);
  const midpoint=(entryLow+entryHigh)/2,zoneWidth=Math.max(Number.EPSILON,entryHigh-entryLow),locationScore=price>=entryLow&&price<=entryHigh?100:price>entryHigh?clamp(75-(price-entryHigh)/zoneWidth*80):clamp(75-(entryLow-price)/zoneWidth*80);
  const entry=weightedScore([
@@ -245,9 +316,9 @@ function evaluateSignal(input){
  const setup=shortScore>=60&&squeeze.score>=55&&bearish.score>=50;
  const probableSqueeze=priceChange<0&&oi1h!==null&&oi1h<0&&funding!==null&&funding>0&&ratio!==null&&ratio>=1.3&&liqs.available&&liqs.spike&&volumeRatio>=1.3;
  const invalidated=!!previouslyInvalidated&&!setup||!!hadSetup&&price>bars4.high+bars4.atr*.25&&oi1h!==null&&oi1h>0&&!bars4.macdBear;
- const entryReady=setup&&probableSqueeze&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60;
- const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup&&(late||rr<1.5||entry.score<70||probableSqueeze&&bearish.score>=70)?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
- return {squeeze,bearish,entry,shortScore,coverage:dataCoverage,setup,probableSqueeze,entryReady,invalidated,decision,midpoint};
+ const entryReady=setup&&probableSqueeze&&squeeze.score>=65&&bearish.score>=70&&entry.score>=70&&!late&&rr>=1.5&&dataCoverage>=60&&qualityOk;
+ const decision=invalidated?'⚫ INVALIDATED':entryReady?'🔴 SHORT ENTRY':setup&&(late||rr<1.5||!qualityOk||entry.score<70||probableSqueeze&&bearish.score>=70)?'🟠 SHORT SETUP — ENTRY NOT READY':shortScore>=40?'🟡 WAIT FOR CONFIRMATION':'WAIT';
+ return {squeeze,bearish,entry,shortScore,qualityOk,coverage:dataCoverage,setup,probableSqueeze,entryReady,invalidated,decision,midpoint};
 }
 function renderList(id,items,empty){
  const ul=$(id);ul.replaceChildren();
@@ -278,6 +349,7 @@ function clearDashboard(){
  $('coverageList').textContent='⚠ Required market data unavailable';
  $('levels').textContent='Entry levels unavailable';$('levelsTitle').textContent='SHORT ENTRY ZONE · unavailable';
  $('apiNotice').style.display='none';
+ sources.records={};renderSources();
  renderList('reasons',[],'No current market data.');
  renderList('against',['Market data unavailable; previous values cleared.'],'');
 }
@@ -309,7 +381,7 @@ async function load(){
  if(stopped)return;
  if(busy){reloadPending=true;return}
  busy=true;const pair=active,optionalErrors=[];$('error').style.display='none';$('apiNotice').style.display='none';$('updated').textContent='Оновлення…';
- const optional=(label,path)=>request(path).catch(e=>{optionalErrors.push(`${label}: ${e.message}`);return null});
+ const failed={},optional=(label,path)=>request(path).catch(e=>{optionalErrors.push(`${label}: ${e.message}`);failed[label]=e.message;return null});
  try{
   const intervals=Object.keys(PERIODS);
   const responses=await Promise.all([
@@ -325,7 +397,8 @@ async function load(){
   if(pair!==active){reloadPending=true;return}
   const tfData=Object.fromEntries(intervals.map((tf,i)=>[tf,summarize(candles[i],tf)]));
   const tick=Array.isArray(tickRaw)?tickRaw[0]:tickRaw,contract=contractRaw||{};
-  const stats=Array.isArray(statsRaw)?statsRaw.map(x=>{let time=Number(x.time??x.t);if(time>1e12)time/=1000;return {...x,time}}).filter(x=>Number.isFinite(x.time)&&x.time+300<=Date.now()/1000).sort((a,b)=>a.time-b.time):[];
+  const statsAll=Array.isArray(statsRaw)?statsRaw.map(x=>{let time=Number(x.time??x.t);if(time>1e12)time/=1000;return {...x,time}}).filter(x=>Number.isFinite(x.time)&&x.time+300<=Date.now()/1000).sort((a,b)=>a.time-b.time):[];
+  const statsTs=statsAll.length?statsAll.at(-1).time*1000+300000:null,stats=statsTs!==null&&Date.now()-statsTs<=MAX_AGE.oi?statsAll:[];
   const fundingHistory=Array.isArray(fundingRaw)?fundingRaw.slice().map(x=>({time:Number(x.time??x.t)||0,rate:validNumber(x.r??x.funding_rate??x.rate)})).filter(x=>x.rate!==null).sort((a,b)=>a.time-b.time).map(x=>x.rate):[];
   const btc1=pair==='BTC_USDT'?tfData['1h']:btcRaw?summarize(btcRaw[0],'1h'):null;
   const btc4=pair==='BTC_USDT'?tfData['4h']:btcRaw?summarize(btcRaw[1],'4h'):null;
@@ -356,7 +429,17 @@ async function load(){
    {label:'BTC context',weight:5,available:!!btc4}
   ];
   const dataCoverage=Math.round(coverageItems.reduce((sum,item)=>sum+(item.available?item.weight:0),0));
-  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4:b4,bars1:b1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup:lifecycle.active,previouslyInvalidated:lifecycle.invalidated,coverage:dataCoverage});
+  const now=Date.now(),candleTs=Math.max(...Object.values(tfData).map(t=>(t.bars.at(-1).t+PERIODS[t.tf])*1000));
+  sources.set('price',{value:last,ts:validNumber(tick?.last)!==null?now:candleTs,confidence:1});
+  sources.set('candles',{value:b4.price,ts:now,confidence:1});
+  const statsMissing={status:statsAll.length?'STALE':'UNAVAILABLE',ts:statsTs};
+  sources.set('oi',Object.values(oiChanges).some(v=>v!==null)?{value:oi1h,ts:statsTs,confidence:.8}:failed['OI / Long-Short']?{status:'ERROR',error:failed['OI / Long-Short']}:statsMissing);
+  sources.set('long_short',ratioValid!==null?{value:ratioValid,ts:statsTs,confidence:.8}:failed['OI / Long-Short']?{status:'ERROR',error:failed['OI / Long-Short']}:statsMissing);
+  sources.set('funding',funding!==null?{value:funding,ts:now,confidence:.9}:failed.Contract&&failed.Ticker?{status:'ERROR',error:failed.Contract}:{});
+  sources.set('liquidations',liqLive?{value:liq.count,ts:lastWsMessageAt,confidence:.5}:{});
+  sources.set('btc',btc4?{value:btc4.change,ts:now,confidence:.9}:failed['BTC context']?{status:'ERROR',error:failed['BTC context']}:{});
+  const qualityOk=['price','candles'].every(m=>sources.valid(m)!==null);
+  const engine=evaluateSignal({ratio:ratioValid,funding,oi1h,oi4h,oi24h,priceChange,liqs:liquidations,volumeRatio,tfs:Object.values(tfData),bars4:b4,bars1:b1,btc1h:btc1,btc4h:btc4,price:last,entryLow,entryHigh,rr,late,hadSetup:lifecycle.active,previouslyInvalidated:lifecycle.invalidated,coverage:dataCoverage,qualityOk});
   const dataConfidence=Math.max(0,Math.round(engine.coverage-(liqLive?8:14)-14));
   const longPercent=ratioValid===null?null:ratioValid/(1+ratioValid)*100;
   const fundingStatus=funding===null?'UNAVAILABLE':funding>=.0008?'EXTREME LONG BIAS':funding>=.0005?'HIGH LONG BIAS':funding>0?'POSITIVE':'NEUTRAL / NEGATIVE';
@@ -366,6 +449,10 @@ async function load(){
   const status=engine.decision;
   const levels={entry:[entryLow,entryHigh],invalidation,targets};
   saveLifecycle(pair,engine);recordSignal(pair,engine,levels);
+  recordEvent({schema:3,timestamp:now,symbol:pair,price:last,scores:{squeeze:engine.squeeze.score,bearish:engine.bearish.score,entry:engine.entry.score,short:engine.shortScore},
+   metrics:{funding,oi:oiChanges,long_short:ratioValid,long_short_change:lsrChanges,liquidations:{count:liq.count,quantity:liq.quantity,spike:liq.spike,available:liqLive,direction:'UNKNOWN'},rvol:Number.isFinite(volumeRatio)?volumeRatio:null,obv_slope:b1.obvSlope,macd_hist_4h:b4.hist,price_change_4h:priceChange,rr:Number.isFinite(rr)?rr:null,late},
+   provenance:sources.snapshot(ALL_METRICS),quality:{coverage:engine.coverage,confidence:dataConfidence,gate_ok:qualityOk,risk},decision:engine.decision,levels});
+  refreshExternal(pair);renderSources();
   $('price').textContent=fmt(last);$('change').textContent=pct(change!==null?change/100:priceChange);$('change').className='small '+((change!==null?change<0:priceChange<0)?'down':'up');
   lastSuccessAt=Date.now();
   $('updated').textContent='LIVE · '+new Date(lastSuccessAt).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -430,6 +517,7 @@ $('pair').onchange=()=>choose($('pair').value);
 $('prev').onclick=()=>{const enabled=pairs.filter(p=>p.enabled),i=enabled.findIndex(p=>p.name===active);choose(enabled[(i-1+enabled.length)%enabled.length].name)};
 $('next').onclick=()=>{const enabled=pairs.filter(p=>p.enabled),i=enabled.findIndex(p=>p.name===active);choose(enabled[(i+1)%enabled.length].name)};
 $('moveUp').onclick=()=>movePair(-1);$('moveDown').onclick=()=>movePair(1);
+$('exportEvents').onclick=exportEvents;
 $('refresh').onclick=load;$('add').onclick=addPair;
 $('pairInput').addEventListener('input',()=> $('pairInput').setCustomValidity(''));
 $('pairInput').addEventListener('keydown',e=>{if(e.key==='Enter')addPair()});
@@ -450,7 +538,7 @@ function scheduleReconnect(){if(stopped||reconnectTimer)return;reconnectTimer=se
 async function loadContracts(){
  try{const contracts=await request('/futures/usdt/contracts');contracts.forEach(c=>{if(c.name?.endsWith('_USDT')&&c.in_delisting!==true)knownPairs.add(c.name)});renderAllPairs()}catch(_){renderAllPairs()}
 }
-renderPairs();$('favorite').textContent=pairs.find(p=>p.name===active)?.fav?'★':'☆';
+renderPairs();renderSources();$('favorite').textContent=pairs.find(p=>p.name===active)?.fav?'★':'☆';
 window.addEventListener('pagehide',stopApplication);
 window.addEventListener('pageshow',e=>{if(e.persisted)startApplication()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){checkFreshness();load()}});
